@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Candy IPTV</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍬</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FFE3F1; --card:#FFFFFF; --ink:#3A1F5C; --muted:#7A5E95;
+  --pink:#FF5FA2; --pink-d:#E23D86; --mint:#5FD9B3; --lemon:#FFD84D; --grape:#8E5BD6;
+  --field:#FFF4FA; --line:#F6B8D6; --err:#D62B6B; --ok:#1E9E78;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ color-scheme:dark;
+    --bg:#24133A; --card:#341F52; --ink:#FFEAF5; --muted:#CBB3E3; --field:#40285F; --line:#6A4590; --err:#FF8FBE; --ok:#7FF0CC; }
+}
+:root[data-theme="dark"]{ color-scheme:dark;
+  --bg:#24133A; --card:#341F52; --ink:#FFEAF5; --muted:#CBB3E3; --field:#40285F; --line:#6A4590; --err:#FF8FBE; --ok:#7FF0CC; }
+*,*::before,*::after{box-sizing:inherit}
+html,body{min-height:100%;margin:0}
+body{
+  font-family:"Nunito",ui-rounded,system-ui,sans-serif; color:var(--ink);
+  background:
+    radial-gradient(circle at 12% 18%, var(--lemon) 0 14px, transparent 15px),
+    radial-gradient(circle at 86% 12%, var(--mint) 0 10px, transparent 11px),
+    radial-gradient(circle at 80% 84%, var(--grape) 0 12px, transparent 13px),
+    radial-gradient(circle at 16% 88%, var(--pink) 0 9px, transparent 10px), var(--bg);
+  background-attachment:fixed;
+  display:grid; place-items:center; padding:64px 16px 24px; overflow-x:hidden;
+}
+.wrap{width:100%;max-width:440px;position:relative}
+.frame{padding:10px;border-radius:34px;background:repeating-linear-gradient(135deg,var(--pink) 0 14px,#fff 14px 28px);box-shadow:0 18px 40px -18px rgba(226,61,134,.55)}
+.card{background:var(--card);border-radius:26px;padding:26px 22px 22px}
+.logo{display:flex;align-items:center;gap:10px}
+h1{font-family:"Fredoka",ui-rounded,system-ui,sans-serif;font-weight:700;font-size:1.9rem;line-height:1.1;margin:0}
+h2{font-family:"Fredoka",ui-rounded,sans-serif;font-weight:600;font-size:1.15rem;margin:22px 0 10px}
+.sub{color:var(--muted);margin:6px 0 18px}
+label{display:block;font-weight:800;font-size:.9rem;margin:14px 0 6px}
+.field{position:relative}
+input{width:100%;font:600 1rem "Nunito",system-ui,sans-serif;color:var(--ink);background:var(--field);border:2px solid var(--line);border-radius:16px;padding:13px 14px;outline:none}
+input:focus{border-color:var(--grape);box-shadow:0 0 0 4px color-mix(in srgb,var(--grape) 25%,transparent)}
+input[aria-invalid="true"]{border-color:var(--err)}
+.peek{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--grape);font:800 .85rem "Nunito",sans-serif;padding:8px;cursor:pointer;border-radius:10px}
+.hint{color:var(--muted);font-size:.82rem;margin-top:5px}
+.err{color:var(--err);font-size:.85rem;font-weight:700;min-height:1.1em;margin-top:5px}
+.row{display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:700;font-size:.92rem;cursor:pointer}
+.row input{width:18px;height:18px;accent-color:var(--pink)}
+.go{width:100%;margin-top:20px;border:0;border-radius:999px;cursor:pointer;font:600 1.15rem "Fredoka",ui-rounded,sans-serif;color:#fff;padding:15px;
+  background:linear-gradient(180deg,#FF8CBF 0%,var(--pink) 45%,var(--pink-d) 100%);
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 6px 0 #B82B6C;transition:transform .08s,box-shadow .08s}
+.go:active{transform:translateY(4px);box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 2px 0 #B82B6C}
+.go:disabled{opacity:.7;cursor:wait}
+.ghost{background:var(--field);color:var(--ink);box-shadow:0 4px 0 var(--line);border:2px solid var(--line)}
+.ghost:active{box-shadow:0 1px 0 var(--line)}
+.note{color:var(--err);font-weight:800;text-align:center;margin:12px 0 0;min-height:1.2em;font-size:.92rem}
+button:focus-visible{outline:3px solid var(--grape);outline-offset:3px}
+.hidden{display:none!important}
+.status{display:inline-block;border-radius:999px;padding:4px 12px;font-weight:800;font-size:.85rem;background:var(--mint);color:#123}
+.status.bad{background:var(--err);color:#fff}
+dl{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:14px 0 0;background:var(--field);border:2px solid var(--line);border-radius:18px;padding:14px 16px}
+dt{color:var(--muted);font-weight:700}
+dd{margin:0;font-weight:800;text-align:right;word-break:break-word}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--field);border:2px solid var(--line);border-radius:999px;padding:5px}
+.seg button{font:800 .9rem "Nunito",sans-serif;border:0;background:transparent;color:var(--muted);padding:9px 4px;border-radius:999px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--lemon);color:#3A1F5C}
+.list{list-style:none;margin:12px 0 0;padding:0;max-height:300px;overflow:auto;border-radius:16px}
+.list li{padding:11px 14px;border-bottom:2px dashed var(--line);font-weight:700}
+.list li:last-child{border-bottom:0}
+.empty{color:var(--muted);text-align:center;padding:14px;font-weight:700}
+.theme{position:absolute;top:-46px;right:0;border:2px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 12px;font:800 .85rem "Nunito",sans-serif;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <button class="theme" id="themeBtn" type="button">🌙 Dark</button>
+  <div class="frame"><div class="card">
+
+    <section id="loginView">
+      <div class="logo">
+        <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+          <path d="M4 22 L11 14 L11 30 Z" fill="#FFD84D"/><path d="M40 22 L33 14 L33 30 Z" fill="#FFD84D"/>
+          <circle cx="22" cy="22" r="12" fill="#FF5FA2"/>
+          <path d="M14 18 Q22 10 30 18" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <path d="M14 26 Q22 18 30 26" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" opacity=".7"/>
+        </svg>
+        <h1>Candy IPTV</h1>
+      </div>
+      <p class="sub">Sign in with the Xtream Codes details from your provider.</p>
+
+      <label for="server">Server URL</label>
+      <input id="server" inputmode="url" autocomplete="url" placeholder="http://line.example.com:8080">
+      <div class="hint">Include the port if your provider gave you one.</div>
+      <div class="err" id="serverErr"></div>
+
+      <label for="user">Username</label>
+      <input id="user" autocomplete="username" autocapitalize="off" spellcheck="false">
+      <div class="err" id="userErr"></div>
+
+      <label for="pass">Password</label>
+      <div class="field">
+        <input id="pass" type="password" autocomplete="current-password">
+        <button class="peek" id="peek" type="button" aria-label="Show password">Show</button>
+      </div>
+      <div class="err" id="passErr"></div>
+
+      <label class="row"><input type="checkbox" id="remember"> Remember me on this device</label>
+
+      <button class="go" id="go" type="button">Sign in</button>
+      <p class="note" id="note" role="status"></p>
+    </section>
+
+    <section id="homeView" class="hidden">
+      <div class="logo"><h1 id="hello">Hi!</h1></div>
+      <p class="sub"><span class="status" id="status">Active</span></p>
+      <dl>
+        <dt>Expires</dt><dd id="exp">—</dd>
+        <dt>Connections</dt><dd id="conns">—</dd>
+        <dt>Trial</dt><dd id="trial">—</dd>
+        <dt>Server</dt><dd id="srv">—</dd>
+        <dt>Time zone</dt><dd id="tz">—</dd>
+      </dl>
+
+      <h2>Browse categories</h2>
+      <div class="seg" role="group" aria-label="Category type">
+        <button type="button" data-a="get_live_categories" aria-pressed="false">Live TV</button>
+        <button type="button" data-a="get_vod_categories" aria-pressed="false">Movies</button>
+        <button type="button" data-a="get_series_categories" aria-pressed="false">Series</button>
+      </div>
+      <ul class="list" id="list"><li class="empty">Pick a type to load its categories.</li></ul>
+
+      <button class="go ghost" id="out" type="button">Sign out</button>
+    </section>
+
+  </div></div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const ls = {
+    get(k, s){ try { return JSON.parse((s?sessionStorage:localStorage).getItem(k)); } catch { return null; } },
+    set(k, v, s){ try { (s?sessionStorage:localStorage).setItem(k, JSON.stringify(v)); } catch {} },
+    del(k){ try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch {} }
+  };
+  let creds = null;
+
+  async function api(c, action = "") {
+    const r = await fetch("/api/xtream", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...c, action })
+    });
+    let out; try { out = await r.json(); } catch { throw new Error("The app couldn't reach its server function. Is it deployed on Netlify?"); }
+    if (!r.ok) throw new Error(out.error || "Something went wrong.");
+    return out.data;
+  }
+
+  const fields = ["server","user","pass"];
+  const clear = () => fields.forEach(f => { $(f).removeAttribute("aria-invalid"); $(f+"Err").textContent = ""; });
+  const fail = (f,m) => { $(f).setAttribute("aria-invalid","true"); $(f+"Err").textContent = m; };
+
+  $("peek").onclick = () => {
+    const show = $("pass").type === "password";
+    $("pass").type = show ? "text" : "password";
+    $("peek").textContent = show ? "Hide" : "Show";
+  };
+  fields.forEach(f => $(f).addEventListener("keydown", e => { if (e.key === "Enter") signIn(); }));
+  $("go").onclick = signIn;
+
+  async function signIn() {
+    clear(); $("note").textContent = "";
+    const server = $("server").value.trim().replace(/\/+$/,"");
+    const username = $("user").value.trim();
+    const password = $("pass").value;
+    let ok = true;
+    if (!server) { fail("server","Enter your server URL."); ok = false; }
+    if (!username) { fail("user","Enter your username."); ok = false; }
+    if (!password) { fail("pass","Enter your password."); ok = false; }
+    if (!ok) return;
+
+    $("go").disabled = true; $("go").textContent = "Signing in…";
+    try {
+      const c = { server, username, password };
+      const data = await api(c);
+      if (!data || !data.user_info || Number(data.user_info.auth) !== 1) {
+        fail("pass", "Wrong username or password for this server."); return;
+      }
+      creds = c;
+      const remember = $("remember").checked;
+      ls.del("candy_iptv");
+      ls.set("candy_iptv", c, !remember);
+      showHome(data);
+    } catch (e) {
+      $("note").textContent = e.message;
+    } finally {
+      $("go").disabled = false; $("go").textContent = "Sign in";
+    }
+  }
+
+  function showHome(d) {
+    const u = d.user_info || {}, s = d.server_info || {};
+    $("hello").textContent = "Hi, " + (u.username || "there") + "!";
+    const st = String(u.status || "Unknown");
+    $("status").textContent = st;
+    $("status").classList.toggle("bad", st.toLowerCase() !== "active");
+    $("exp").textContent = u.exp_date && u.exp_date !== "null"
+      ? new Date(Number(u.exp_date) * 1000).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})
+      : "No expiry";
+    $("conns").textContent = (u.active_cons ?? "0") + " of " + (u.max_connections ?? "?");
+    $("trial").textContent = String(u.is_trial) === "1" ? "Yes" : "No";
+    $("srv").textContent = s.url ? s.url + (s.port ? ":" + s.port : "") : creds.server;
+    $("tz").textContent = s.timezone || "—";
+    $("list").innerHTML = '<li class="empty">Pick a type to load its categories.</li>';
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed","false"));
+    $("loginView").classList.add("hidden"); $("homeView").classList.remove("hidden");
+  }
+
+  document.querySelectorAll(".seg button").forEach(b => b.onclick = async () => {
+    document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    const list = $("list");
+    list.innerHTML = '<li class="empty">Loading…</li>';
+    try {
+      const cats = await api(creds, b.dataset.a);
+      if (!Array.isArray(cats) || !cats.length) { list.innerHTML = '<li class="empty">No categories here.</li>'; return; }
+      list.innerHTML = "";
+      cats.forEach(c => { const li = document.createElement("li"); li.textContent = c.category_name; list.appendChild(li); });
+    } catch (e) {
+      list.innerHTML = ""; const li = document.createElement("li"); li.className = "empty"; li.textContent = e.message; list.appendChild(li);
+    }
+  });
+
+  $("out").onclick = () => {
+    ls.del("candy_iptv"); creds = null; $("pass").value = "";
+    $("homeView").classList.add("hidden"); $("loginView").classList.remove("hidden");
+    $("note").textContent = "Signed out.";
+  };
+
+  // Theme toggle
+  function applyTheme(t){
+    if (t) document.documentElement.setAttribute("data-theme", t);
+    const dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    $("themeBtn").textContent = dark ? "☀️ Light" : "🌙 Dark";
+  }
+  applyTheme(ls.get("candy_theme"));
+  $("themeBtn").onclick = () => {
+    const cur = document.documentElement.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const next = cur === "dark" ? "light" : "dark"; ls.set("candy_theme", next); applyTheme(next);
+  };
+
+  // Auto sign-in from a saved session
+  const saved = ls.get("candy_iptv") || ls.get("candy_iptv", true);
+  if (saved && saved.server) {
+    $("server").value = saved.server; $("user").value = saved.username; $("pass").value = saved.password;
+    $("remember").checked = !!ls.get("candy_iptv");
+    signIn();
+  }
+})();
+</script>
+</body>
+</html>

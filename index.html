@@ -327,6 +327,7 @@ const tc = s => { s = Math.floor(s || 0); const h = Math.floor(s / 3600), m = Ma
 const b64 = s => { if (!s) return ''; try { return decodeURIComponent(escape(atob(s))); } catch { try { return atob(s); } catch { return s; } } };
 const hostOf = u => { try { return new URL(u).host; } catch { return u; } };
 const ADULT = /adult|xxx|18\+|porn/i;
+const isApple = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.vendor || '').includes('Apple');
 const BAD_EXT = /^(mkv|avi|wmv|flv|divx)$/i;
 
 const IC = {
@@ -415,17 +416,47 @@ async function loadXtream(a, step) {
   step('Loading categories…');
   const [lc, vc, sc] = await Promise.all(['get_live_categories', 'get_vod_categories', 'get_series_categories'].map(x => xapi(a, x).catch(() => [])));
   step('Loading channels, movies and series…');
-  const [ls, vs, ss] = await Promise.all(['get_live_streams', 'get_vod_streams', 'get_series'].map(x => xapi(a, x).catch(() => [])));
+  const [ls, vs, ss] = await Promise.all(['get_live_streams', 'get_vod_streams', 'get_series'].map(x => xapi(a, x).then(r => Array.isArray(r) ? r : arr(r)).catch(() => null)));
   const cat = c => ({ id: String(c.category_id), name: c.category_name || 'Untitled' });
+  const cats = { live: arr(lc).map(cat), movie: arr(vc).map(cat), series: arr(sc).map(cat) };
+  const full = { live: ls, movie: vs, series: ss };
+  const lazy = {};
+  for (const t of ['live', 'movie', 'series']) lazy[t] = (!full[t] || !full[t].length) && cats[t].length > 0;
   return {
-    info, at: Date.now(),
-    cats: { live: arr(lc).map(cat), movie: arr(vc).map(cat), series: arr(sc).map(cat) },
-    items: {
-      live: arr(ls).map(s => ({ id: String(s.stream_id), name: s.name || '', icon: s.stream_icon || '', cat: String(s.category_id ?? ''), num: +s.num || 0, archive: +s.tv_archive === 1, archiveDays: +s.tv_archive_duration || 0 })),
-      movie: arr(vs).map(s => ({ id: String(s.stream_id), name: s.name || '', icon: s.stream_icon || '', cat: String(s.category_id ?? ''), ext: s.container_extension || 'mp4', rating: +s.rating || 0, added: +s.added || 0 })),
-      series: arr(ss).map(s => ({ id: String(s.series_id), name: s.name || '', icon: s.cover || '', cat: String(s.category_id ?? ''), rating: +s.rating || 0, added: +s.last_modified || 0 }))
-    }
+    info, at: Date.now(), cats, lazy, catItems: { live: {}, movie: {}, series: {} },
+    items: { live: (ls || []).map(MAP.live), movie: (vs || []).map(MAP.movie), series: (ss || []).map(MAP.series) }
   };
+}
+const MAP = {
+  live: s => ({ id: String(s.stream_id), name: s.name || '', icon: s.stream_icon || '', cat: String(s.category_id ?? ''), num: +s.num || 0, archive: +s.tv_archive === 1, archiveDays: +s.tv_archive_duration || 0 }),
+  movie: s => ({ id: String(s.stream_id), name: s.name || '', icon: s.stream_icon || '', cat: String(s.category_id ?? ''), ext: s.container_extension || 'mp4', rating: +s.rating || 0, added: +s.added || 0 }),
+  series: s => ({ id: String(s.series_id), name: s.name || '', icon: s.cover || '', cat: String(s.category_id ?? ''), rating: +s.rating || 0, added: +s.last_modified || 0 })
+};
+const ACTION_OF = { live: 'get_live_streams', movie: 'get_vod_streams', series: 'get_series' };
+const isLazy = t => !!(L && L.lazy && L.lazy[t]);
+const catLoaded = (t, id) => !!(L.catItems && L.catItems[t] && L.catItems[t][id]);
+const allLoaded = t => !isLazy(t) || L.cats[t].every(c => catLoaded(t, c.id));
+const saveLibSoon = debounce(() => { const a = acc(); if (a && L) idb.put('lib:' + a.id, libForCache()); }, 1500);
+async function loadCat(t, id) {
+  if (!isLazy(t) || catLoaded(t, id)) return;
+  const r = await xapi(acc(), ACTION_OF[t], { category_id: id });
+  const list = arr(r).map(MAP[t]);
+  const ids = [];
+  for (const i of list) {
+    let it = L.map[t].get(i.id);
+    if (!it) { if (!i.cat) i.cat = id; L.items[t].push(i); L.map[t].set(i.id, i); it = i; }
+    ids.push(it.id);
+  }
+  L.catItems[t][id] = ids;
+  L.counts[t][id] = ids.length;
+  saveLibSoon();
+}
+async function loadAllCats(t, onProgress) {
+  const todo = L.cats[t].filter(c => !catLoaded(t, c.id) && !isHidden(t, c.id) && (unlocked || !isLocked(t, c)));
+  let done = 0, failed = 0, n = 0;
+  const work = async () => { while (n < todo.length) { const c = todo[n++]; try { await loadCat(t, c.id); } catch { failed++; } done++; onProgress && onProgress(done, todo.length); } };
+  await Promise.all(Array.from({ length: 4 }, work));
+  return failed;
 }
 
 function parseM3U(text) {
@@ -470,15 +501,18 @@ async function loadM3U(a, step) {
 
 function setLib(lib) {
   L = lib; L.map = {}; L.counts = {}; L.catById = {};
+  L.lazy ||= {}; L.catItems ||= {};
   for (const t of ['live', 'movie', 'series']) {
     L.items[t] ||= []; L.cats[t] ||= [];
     L.map[t] = new Map(L.items[t].map(i => [i.id, i]));
+    L.catItems[t] ||= {};
     const c = {}; for (const i of L.items[t]) c[i.cat] = (c[i.cat] || 0) + 1;
+    for (const [k, ids] of Object.entries(L.catItems[t])) c[k] = ids.length;
     L.counts[t] = c;
     L.catById[t] = new Map(L.cats[t].map(x => [x.id, x]));
   }
 }
-const libForCache = () => ({ info: L.info, cats: L.cats, items: L.items, at: L.at });
+const libForCache = () => ({ info: L.info, cats: L.cats, items: L.items, at: L.at, lazy: L.lazy, catItems: L.catItems });
 
 async function activate(a, fresh) {
   showLoading('Connecting…');
@@ -536,6 +570,7 @@ function itemsFor(t, cat) {
   if (cat === '__recent') return ids(d.recent);
   if (cat === '__all') return visibleItems(t);
   if (cat.startsWith('col:')) { const c = d.collections.find(x => 'col:' + x.id === cat); return c ? ids(c.items) : []; }
+  if (L.catItems[t] && L.catItems[t][cat]) return L.catItems[t][cat].map(id => m.get(id)).filter(Boolean);
   return L.items[t].filter(i => i.cat === cat);
 }
 const isFav = (t, id) => D().favs[t].includes(String(id));
@@ -626,7 +661,8 @@ function requireUnlock(cb) { if (unlocked) return cb(); if (!S.settings.pin) ret
 function ensurePin(cb) { if (S.settings.pin) return cb(); pinSetup(cb); }
 
 /* ---------- login ---------- */
-const LOGIN = { mode: 'xtream' };
+const LOGIN = { mode: 'xtream', remember: true };
+ACT.remTog = () => { LOGIN.remember = !LOGIN.remember; const sw = $('#remSw'); if (sw) sw.classList.toggle('on', LOGIN.remember); };
 VIEWS.login = () => {
   const m = LOGIN.mode;
   return `<div class="login">
@@ -643,6 +679,7 @@ VIEWS.login = () => {
       <label>Password<span class="pw"><input id="fPass" type="password" autocomplete="current-password" data-enter="doLogin"><button class="peek" data-act="peek" type="button">Show</button></span></label>` : ''}
       ${m === 'm3u' ? `<label>M3U link<input id="fUrl" inputmode="url" placeholder="http://example.com/get.php?username=…" autocapitalize="off" autocorrect="off" spellcheck="false" data-enter="doLogin"></label>` : ''}
       ${m === 'single' ? `<label>Stream link<input id="fUrl" inputmode="url" placeholder="http://example.com/live/channel.m3u8" autocapitalize="off" autocorrect="off" spellcheck="false" data-enter="doLogin"></label>` : ''}
+      ${m !== 'single' ? `<button class="srow" style="padding:10px 2px" data-act="remTog" type="button">${icon('lock')}<span>Remember me on this device</span><span class="sw ${LOGIN.remember ? 'on' : ''}" id="remSw"></span></button>` : ''}
       <p class="err" id="fErr" role="alert"></p>
       <button class="btn primary big" data-act="doLogin">${m === 'single' ? 'Play stream' : 'Log in'}</button>
     </div></div>`;
@@ -673,6 +710,7 @@ ACT.doLogin = async () => {
     if (!/^https?:\/\//i.test(url)) { err.textContent = 'Enter a link that starts with http:// or https://.'; return; }
     a = { id: uid(), type: 'm3u', name: name || 'M3U playlist', url };
   }
+  a.temp = !LOGIN.remember;
   const ex = S.accounts.find(x => x.type === a.type && (a.type === 'xtream' ? x.server === a.server && x.username === a.username : x.url === a.url));
   if (ex) { Object.assign(ex, { ...a, id: ex.id }); a = ex; }
   await activate(a, true);
@@ -696,6 +734,8 @@ VIEWS.home = () => {
   const chip = (c, label, val) => `<div class="chip" style="--c:${c}"><i></i><div><span>${label}</span><b>${esc(val)}</b></div></div>`;
   const cw = cwItems(), last = cw[0];
   const off = xt ? '' : ' off';
+  const cnt = (t, word) => allLoaded(t) ? `${fmt(n[t])} ${word}` : `${fmt(visibleCats(t).length)} categories`;
+  const cntShort = t => allLoaded(t) ? fmt(n[t]) : `${fmt(visibleCats(t).length)} groups`;
   return `<header class="hbar"><div class="brand">${logo()}<span>Candy IPTV</span></div><div class="clock"><b id="clkT"></b><span id="clkD"></span></div></header>
   <nav class="rail" aria-label="Shortcuts">
     ${rb('accounts', 'users', 'Users')}${rb('favs', 'star', 'Favourites')}${rb('search', 'search', 'Search')}${rb('continue', 'history', 'Continue')}
@@ -703,9 +743,9 @@ VIEWS.home = () => {
   </nav>
   ${days !== null && days <= 7 ? `<div class="banner ${days <= 0 ? 'bad' : ''}">${icon('info')}<span>${days <= 0 ? 'Your subscription has expired. Contact your provider to renew.' : `Your subscription ends in ${days} day${days === 1 ? '' : 's'}.`}</span></div>` : ''}
   <div class="tiles">
-    ${tile('data-act="browse" data-type="live"', 't-live', 'tv', 'Live TV', fmt(n.live) + ' channels')}
-    ${tile('data-act="browse" data-type="movie"', 't-movie', 'film', 'Movies', fmt(n.movie) + ' titles')}
-    ${tile('data-act="browse" data-type="series"', 't-series', 'layers', 'Series', fmt(n.series) + ' shows')}
+    ${tile('data-act="browse" data-type="live"', 't-live', 'tv', 'Live TV', cnt('live', 'channels'))}
+    ${tile('data-act="browse" data-type="movie"', 't-movie', 'film', 'Movies', cnt('movie', 'titles'))}
+    ${tile('data-act="browse" data-type="series"', 't-series', 'layers', 'Series', cnt('series', 'shows'))}
     ${tile('data-act="epg"', 't-epg' + off, 'guide', 'TV guide', xt ? 'What’s on now' : 'Xtream only')}
     ${tile('data-act="catchup"', 't-catch' + off, 'clock', 'Catch-up', xt ? 'Watch past shows' : 'Xtream only')}
     ${tile('data-act="multi"', 't-multi', 'grid', 'Multiscreen', '2 or 4 channels')}
@@ -713,7 +753,7 @@ VIEWS.home = () => {
   <button class="cw" data-act="continue"><span class="ci">${icon('play', 'fill')}</span><span>Continue watching<small>${last ? esc(last.title + (last.sub ? ' ' + last.sub : '')) + ` at ${tc(last.t)}` : 'Movies and episodes you start show up here'}</small></span></button>
   <div class="stats">
     ${chip('#34D399', 'Expires', exp ? exp.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : (xt ? 'Unlimited' : 'Not shown'))}
-    ${chip('#3B82F6', 'Live TV', fmt(n.live))}${chip('#EF4444', 'Movies', fmt(n.movie))}${chip('#22C55E', 'Series', fmt(n.series))}
+    ${chip('#3B82F6', 'Live TV', cntShort('live'))}${chip('#EF4444', 'Movies', cntShort('movie'))}${chip('#22C55E', 'Series', cntShort('series'))}
     ${chip('#FBBF24', xt ? 'Connections' : 'Total', xt ? `${ui.active_cons || 0} of ${ui.max_connections || '?'}` : fmt(n.live + n.movie + n.series))}
     ${chip('#C084FC', 'Logged in', a.name)}
   </div>`;
@@ -739,18 +779,22 @@ function catEntries(t) {
   out.push({ id: '__fav', name: 'Favourites', count: itemsFor(t, '__fav').length, ic: 'star', special: true });
   if (t === 'live') out.push({ id: '__recent', name: 'Recently watched', count: itemsFor(t, '__recent').length, ic: 'history', special: true });
   if (t === 'live') d.collections.forEach(c => out.push({ id: 'col:' + c.id, name: c.name, count: c.items.length, ic: 'folder', col: true }));
-  out.push({ id: '__all', name: t === 'live' ? 'All channels' : t === 'movie' ? 'All movies' : 'All series', count: visibleItems(t).length, ic: 'grid', special: true });
-  for (const c of L.cats[t]) { if (isHidden(t, c.id)) continue; out.push({ id: c.id, name: catName(t, c), count: L.counts[t][c.id] || 0, locked: isLocked(t, c) }); }
+  out.push({ id: '__all', name: t === 'live' ? 'All channels' : t === 'movie' ? 'All movies' : 'All series', count: allLoaded(t) ? visibleItems(t).length : null, ic: 'grid', special: true });
+  for (const c of L.cats[t]) { if (isHidden(t, c.id)) continue; out.push({ id: c.id, name: catName(t, c), count: isLazy(t) && !catLoaded(t, c.id) ? null : (L.counts[t][c.id] || 0), locked: isLocked(t, c) }); }
   return out;
 }
-const catRow = c => `<div class="cat ${B.cat === c.id ? 'on' : ''}"><button class="cat-main" data-act="openCat" data-id="${esc(c.id)}">${c.ic ? icon(c.ic) : ''}${c.locked ? icon('lock', 'lk') : ''}<span class="cat-n">${esc(c.name)}</span><span class="cat-c">${fmt(c.count)}</span></button>${c.special ? '' : `<button class="cat-more" data-act="catMenu" data-id="${esc(c.id)}" aria-label="Category options">${icon('more')}</button>`}</div>`;
+const catRow = c => `<div class="cat ${B.cat === c.id ? 'on' : ''}"><button class="cat-main" data-act="openCat" data-id="${esc(c.id)}">${c.ic ? icon(c.ic) : ''}${c.locked ? icon('lock', 'lk') : ''}<span class="cat-n">${esc(c.name)}</span><span class="cat-c">${c.count == null ? '' : fmt(c.count)}</span></button>${c.special ? '' : `<button class="cat-more" data-act="catMenu" data-id="${esc(c.id)}" aria-label="Category options">${icon('more')}</button>`}</div>`;
 function progressPct(key) { const p = D().progress[key]; return p && p.d ? Math.min(100, p.t / p.d * 100) : 0; }
 const chRow = i => { const f = isFav('live', i.id); return `<div class="row"><button class="row-main" data-act="playLive" data-id="${i.id}">${i.num ? `<span class="num">${i.num}</span>` : ''}<span class="logo">${logoImg(i)}</span><span class="row-n">${esc(i.name)}</span>${i.archive ? '<span class="tag">Catch-up</span>' : ''}</button><button class="ib sm ${f ? 'fav' : ''}" data-act="fav" data-t="live" data-id="${i.id}" aria-label="Favourite">${icon('star', f ? 'fill' : '')}</button><button class="ib sm" data-act="chMenu" data-id="${i.id}" aria-label="More options">${icon('more')}</button></div>`; };
 const poster = (t, i) => { const pct = t === 'movie' ? progressPct('m:' + i.id) : 0; return `<button class="poster" data-act="${t === 'movie' ? 'movieInfo' : 'seriesInfo'}" data-id="${i.id}"><span class="pimg"><span class="pfb">${esc((i.name || '?').trim().slice(0, 1))}</span>${i.icon ? `<img loading="lazy" src="${esc(imgP(i.icon))}" alt="" onerror="this.remove()">` : ''}${pct > 1 ? `<span class="pbar"><i style="width:${pct}%"></i></span>` : ''}</span><span class="pname">${esc(i.name)}</span>${i.rating ? `<span class="prate">★ ${(+i.rating).toFixed(1)}</span>` : ''}</button>`; };
 function itemsListHtml() {
   const t = B.type, l = B.list, shown = l.slice(0, B.limit);
+  const what = t === 'live' ? 'channels' : t === 'movie' ? 'movies' : 'series';
+  if (B.loading) return `<div class="empty"><div class="spin"></div><span id="lazyMsg">Loading ${what}…</span></div>`;
+  if (B.err) return `<div class="empty">${esc(B.err)}<br><br><button class="btn" data-act="retryCat">${icon('refresh')} Try again</button></div>`;
+  const banner = B.cat === '__all' && !allLoaded(t) ? `<div class="banner">${icon('info')}<span>Showing ${what} from the categories you’ve opened so far.</span></div><button class="btn more" style="margin:0 0 12px" data-act="loadAll">${icon('download')} Load all ${what}</button>` : '';
   const box = t === 'live' ? `<div class="rows">${shown.map(chRow).join('')}</div>` : `<div class="posters">${shown.map(i => poster(t, i)).join('')}</div>`;
-  return (shown.length ? box : `<div class="empty">${B.q ? 'No matches.' : B.cat === '__fav' ? 'Tap the star on anything to add it here.' : 'Nothing here yet.'}</div>`)
+  return banner + (shown.length ? box : `<div class="empty">${B.q ? 'No matches.' : B.cat === '__fav' ? 'Tap the star on anything to add it here.' : 'Nothing here yet.'}</div>`)
     + (l.length > B.limit ? `<button class="btn more" data-act="more">Show more (${fmt(l.length - B.limit)} left)</button>` : '');
 }
 const renderItems = () => { const w = $('#itemsWrap'); if (w) w.innerHTML = itemsListHtml(); };
@@ -767,10 +811,28 @@ VIEWS.browse = () => {
 ACT.browse = d => { B = { type: d.type, cat: narrow() ? null : '__all', q: '', sort: 'default', limit: 150, list: [], catPushed: false }; if (B.cat) B.list = computeList(); go('browse'); };
 function selectCat(id) {
   const wasNull = B.cat === null;
-  B.cat = id; B.q = ''; B.limit = 150; B.list = computeList();
+  B.cat = id; B.q = ''; B.limit = 150; B.err = ''; B.loading = false;
   if (narrow() && wasNull) { history.pushState({ cat: 1 }, ''); B.catPushed = true; }
+  if (isLazy(B.type) && L.catById[B.type].has(id) && !catLoaded(B.type, id)) { B.list = []; fetchCat(id); }
+  else B.list = computeList();
   render(); scrollTo(0, 0);
 }
+async function fetchCat(id) {
+  const t = B.type; B.loading = true; B.err = '';
+  try { await loadCat(t, id); } catch (e) { B.err = (e && e.message) || 'Couldn’t load this category.'; }
+  B.loading = false;
+  if (CUR.v !== 'browse' || B.cat !== id || B.type !== t) return;
+  if (!B.err) B.list = computeList();
+  render();
+}
+ACT.retryCat = () => { if (B.cat) { B.list = []; fetchCat(B.cat); renderItems(); } };
+ACT.loadAll = async () => {
+  const t = B.type; B.loading = true; renderItems();
+  const failed = await loadAllCats(t, (d, n) => { const m = $('#lazyMsg'); if (m) m.textContent = `Loading category ${d} of ${n}…`; });
+  B.loading = false;
+  if (failed) toast(`${failed} categor${failed === 1 ? 'y' : 'ies'} didn’t load. Open them to try again.`);
+  if (CUR.v === 'browse' && B.type === t) { B.list = computeList(); render(); }
+};
 ACT.openCat = d => { const t = B.type, c = L.catById[t].get(d.id); if (c && !unlocked && isLocked(t, c)) return requireUnlock(() => selectCat(d.id)); selectCat(d.id); };
 INPUT.q = debounce(v => { B.q = v; B.limit = 150; B.list = computeList(); renderItems(); }, 200);
 CHANGE.sort = v => { B.sort = v; B.list = computeList(); renderItems(); };
@@ -862,7 +924,7 @@ VIEWS.movie = p => {
         <button class="btn ${f ? 'fav' : ''}" data-act="favBtn" data-t="movie" data-id="${i.id}">${icon('star', f ? 'fill' : '')} ${f ? 'Favourite' : 'Add to favourites'}</button>
         ${info.youtube_trailer ? `<a class="btn" href="https://www.youtube.com/watch?v=${enc(info.youtube_trailer)}" target="_blank" rel="noopener">${icon('film')} Trailer</a>` : ''}
       </div>
-      ${BAD_EXT.test(i.ext || '') ? `<p class="note">This movie is ${esc(i.ext.toUpperCase())}. It plays on most Android phones and computers, but not on iPhone or iPad.</p>` : ''}
+      ${BAD_EXT.test(i.ext || '') && isApple ? `<p class="note">This movie is ${esc(i.ext.toUpperCase())}. The app will ask your provider for an iPhone-friendly version, which most servers offer.</p>` : ''}
       ${!inf && acc().type === 'xtream' ? '<p class="muted">Loading details…</p>' : ''}
       ${info.plot || info.description ? `<p class="plot">${esc(info.plot || info.description)}</p>` : ''}
       ${info.cast || info.actors ? `<p class="kv"><b>Cast</b>${esc(info.cast || info.actors)}</p>` : ''}
@@ -943,13 +1005,21 @@ VIEWS.search = () => `${topbar('Search')}<label class="sbox big">${icon('search'
 AFTER.search = () => { const i = $('#sq'); i && i.focus(); };
 function runSearch() { const q = SR.q.trim().toLowerCase(); for (const t of ['live', 'movie', 'series']) SR[t] = q.length < 2 ? [] : visibleItems(t).filter(i => i.name.toLowerCase().includes(q)).slice(0, 40); }
 function searchHtml() {
-  if (SR.q.trim().length < 2) return '<div class="empty">Type at least 2 letters to search everything.</div>';
-  let h = '';
+  const lazyT = ['live', 'movie', 'series'].filter(t => !allLoaded(t));
+  const note = lazyT.length ? `<div class="banner">${icon('info')}<span>Your provider’s ${lazyT.map(t => ({ live: 'channel', movie: 'movie', series: 'series' }[t])).join(' and ')} list is large, so search covers only categories you’ve opened.</span></div>${lazyT.map(t => `<button class="btn more" style="margin:0 0 12px" data-act="searchLoadAll" data-t="${t}">${icon('download')} Load all ${t === 'live' ? 'channels' : t === 'movie' ? 'movies' : 'series'} for search</button>`).join('')}` : '';
+  if (SR.q.trim().length < 2) return note + '<div class="empty">Type at least 2 letters to search everything.</div>';
+  let h = note;
   if (SR.live.length) h += `<h3 class="sec">Live TV</h3><div class="rows">${SR.live.map(chRow).join('')}</div>`;
   if (SR.movie.length) h += `<h3 class="sec">Movies</h3><div class="posters">${SR.movie.map(i => poster('movie', i)).join('')}</div>`;
   if (SR.series.length) h += `<h3 class="sec">Series</h3><div class="posters">${SR.series.map(i => poster('series', i)).join('')}</div>`;
-  return h || '<div class="empty">No matches.</div>';
+  return h + (SR.live.length + SR.movie.length + SR.series.length ? '' : '<div class="empty">No matches.</div>');
 }
+ACT.searchLoadAll = async (d, el) => {
+  el.disabled = true;
+  const failed = await loadAllCats(d.t, (k, n) => { el.textContent = `Loading ${k} of ${n}…`; });
+  if (failed) toast(`${failed} categor${failed === 1 ? 'y' : 'ies'} didn’t load.`);
+  runSearch(); const r = $('#sRes'); if (r) r.innerHTML = searchHtml();
+};
 INPUT.sq = debounce(v => { SR.q = v; runSearch(); const r = $('#sRes'); if (r) r.innerHTML = searchHtml(); }, 220);
 
 let CWT = 'live';
@@ -1104,7 +1174,7 @@ ACT.msSet = d => { const k = SHEET.slot; MS.slots[k] = d.id; MS.focus = k; close
 
 /* ---------- users ---------- */
 ACT.accounts = () => go('accounts');
-VIEWS.accounts = () => `${topbar('Users')}${S.accounts.map(a => `<div class="acc"><button class="row-main" data-act="useAcc" data-id="${a.id}"><span class="logo">${icon(a.type === 'm3u' ? 'layers' : 'users')}</span><span class="row-n">${esc(a.name)}<small>${a.type === 'm3u' ? 'M3U playlist' : esc(a.username + ' on ' + hostOf(a.server))}</small></span>${a.id === S.active ? '<span class="badge">In use</span>' : ''}</button><button class="ib sm" data-act="delAcc" data-id="${a.id}" aria-label="Delete user">${icon('trash')}</button></div>`).join('') || '<div class="empty">No saved users yet.</div>'}<button class="btn primary big" data-act="addAcc">${icon('plus')} Add user</button>`;
+VIEWS.accounts = () => `${topbar('Users')}${S.accounts.map(a => `<div class="acc"><button class="row-main" data-act="useAcc" data-id="${a.id}"><span class="logo">${icon(a.type === 'm3u' ? 'layers' : 'users')}</span><span class="row-n">${esc(a.name)}<small>${a.type === 'm3u' ? 'M3U playlist' : esc(a.username + ' on ' + hostOf(a.server))}</small></span>${a.temp ? '<span class="tag">Not remembered</span>' : ''}${a.id === S.active ? '<span class="badge">In use</span>' : ''}</button><button class="ib sm" data-act="delAcc" data-id="${a.id}" aria-label="Delete user">${icon('trash')}</button></div>`).join('') || '<div class="empty">No saved users yet.</div>'}<button class="btn primary big" data-act="addAcc">${icon('plus')} Add user</button>`;
 ACT.useAcc = d => { const a = S.accounts.find(x => x.id === d.id); if (!a) return; if (a.id === S.active && L) return home(); activate(a, false); };
 ACT.addAcc = () => { LOGIN.mode = 'xtream'; go('login'); };
 ACT.delAcc = d => {
@@ -1115,7 +1185,7 @@ ACT.delAcc = d => {
     save(); render();
   });
 };
-ACT.logout = () => { S.active = null; save(); L = null; unlocked = false; LOGIN.mode = 'xtream'; showLogin(); toast('Logged out. Your login is still saved under Users.'); };
+ACT.logout = () => { const cur = acc(); if (cur && cur.temp) { S.accounts = S.accounts.filter(x => x !== cur); delete S.data[cur.id]; idb.del('lib:' + cur.id); } S.active = null; save(); L = null; unlocked = false; LOGIN.mode = 'xtream'; showLogin(); toast(cur && cur.temp ? 'Logged out.' : 'Logged out. Your login is still saved under Users.'); };
 ACT.refresh = async () => { const a = acc(); if (!a) return; Object.keys(EPGC).forEach(k => delete EPGC[k]); if (await activate(a, true)) toast('Lists updated'); };
 
 /* ---------- settings ---------- */
@@ -1185,7 +1255,6 @@ async function runCheck() {
 let PC = null, ASPECT = 'contain', sleepT = null, sleepEnd = 0, saveT = 0, zapBuf = '', zapT = null;
 const ASPECTS = { contain: 'Fit', cover: 'Fill', fill: 'Stretch' };
 const pv = $('#pv');
-const isApple = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.vendor || '').includes('Apple');
 function stopMedia(v) { if (!v) return; if (v._hls) { try { v._hls.destroy(); } catch {} v._hls = null; } v.onerror = null; try { v.pause(); } catch {} v.removeAttribute('src'); try { v.load(); } catch {} }
 function attach(v, rawUrl, onErr) {
   const url = P(rawUrl), hls = /\.m3u8(\?|$)/i.test(rawUrl);
@@ -1194,7 +1263,8 @@ function attach(v, rawUrl, onErr) {
     let netRetry = 0, mediaRetry = 0;
     h.on(Hls.Events.ERROR, (e, d) => {
       if (!d.fatal) return;
-      if (d.type === Hls.ErrorTypes.NETWORK_ERROR && netRetry++ < 2) { setTimeout(() => h.startLoad(), 1000); return; }
+      const manifest = /manifest/i.test(d.details || '');
+      if (d.type === Hls.ErrorTypes.NETWORK_ERROR && !manifest && netRetry++ < 2) { setTimeout(() => h.startLoad(), 1000); return; }
       if (d.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetry++ < 1) { h.recoverMediaError(); return; }
       onErr(); try { h.destroy(); } catch {} v._hls = null;
     });
@@ -1204,12 +1274,28 @@ function attach(v, rawUrl, onErr) {
   v.onerror = () => onErr();
   v.src = url;
 }
+function sourcesFor(c) {
+  const raw = srcFor(c);
+  if ((c.kind === 'movie' || c.kind === 'episode') && acc() && acc().type === 'xtream') {
+    const alt = raw.replace(/\.[a-z0-9]{2,4}$/i, '.m3u8');
+    if (alt === raw) return [raw];
+    return BAD_EXT.test(c.item.ext || '') && isApple ? [alt, raw] : [raw, alt];
+  }
+  return [raw];
+}
+function playChain(v, list, onFail, i = 0) {
+  if (i >= list.length) return onFail();
+  if (i > 0) stopMedia(v);
+  attach(v, list[i], () => playChain(v, list, onFail, i + 1));
+  v.play().catch(() => {});
+}
 function srcFor(c) { switch (c.kind) { case 'live': return liveSrc(c.item); case 'movie': return movieSrc(c.item); case 'episode': return epSrc(c.item); default: return c.url; } }
 function showMsg(t) { const m = $('#pMsg'); m.textContent = t; m.classList.remove('hidden'); }
 function hideMsg() { $('#pMsg').classList.add('hidden'); }
 function errText() {
   const ext = (PC.item && PC.item.ext) || '';
-  if ((PC.kind === 'movie' || PC.kind === 'episode') && BAD_EXT.test(ext)) return `This video is ${ext.toUpperCase()}, a format ${isApple ? 'iPhone and iPad browsers' : 'this browser'} can’t play. MP4 titles work everywhere.`;
+  if ((PC.kind === 'movie' || PC.kind === 'episode') && BAD_EXT.test(ext)) return `This video is ${ext.toUpperCase()}, and your provider doesn’t offer a version ${isApple ? 'iPhone and iPad browsers' : 'this browser'} can play. It should work on an Android phone or a computer.`;
+  if (PC.kind === 'movie' || PC.kind === 'episode') return 'This video won’t play right now. Try again in a moment, or run Link check from the home screen.';
   if (PC.kind === 'catchup') return 'This recording won’t play. Your provider may not offer catch-up for this channel or time.';
   return 'This won’t play right now. It may be offline, or your provider may block web playback.';
 }
@@ -1223,8 +1309,7 @@ function openPlayer(ctx) {
   $('#pTitle').textContent = ctx.kind === 'live' ? ctx.item.name : (ctx.title || (ctx.item && ctx.item.name) || '');
   $('#pSub').textContent = ctx.kind === 'live' ? (ctx.item.num ? `Channel ${ctx.item.num}` : 'Live') : (ctx.sub || '');
   hideMsg(); stopMedia(pv); pv.style.objectFit = ASPECT;
-  const raw = srcFor(ctx);
-  attach(pv, raw, () => { if (PC === ctx) showMsg(errText()); });
+  playChain(pv, sourcesFor(ctx), () => { if (PC === ctx) showMsg(errText()); });
   const pr = ctx.resumeKey && D().progress[ctx.resumeKey];
   if (ctx.resume && pr && pr.t > 30 && pr.t < pr.d * 0.95) pv.addEventListener('loadedmetadata', () => { try { pv.currentTime = pr.t; } catch {} }, { once: true });
   pv.play().catch(() => {});
@@ -1371,6 +1456,13 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveP
 
 /* ---------- start ---------- */
 (async () => {
+  const temps = S.accounts.filter(x => x.temp);
+  if (temps.length) {
+    for (const t of temps) { delete S.data[t.id]; idb.del('lib:' + t.id); }
+    S.accounts = S.accounts.filter(x => !x.temp);
+    if (!acc()) S.active = null;
+    save();
+  }
   const a = acc();
   if (!a) return showLogin();
   showLoading('Loading your lists…');

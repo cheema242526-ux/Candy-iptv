@@ -1711,7 +1711,7 @@ class MkvPlayer {
     this.v = v; this.url = url; this.onFail = onFail; this.opts = opts;
     this.dead = false; this.tr = {}; this.list = []; this.seq = 1; this.drop = false;
     this.pos = 0; this.gen = 0; this.total = null; this.ctls = new Set(); this.next = null; this.looping = false;
-    this.inited = false; this.ending = false; this.audioList = [];
+    this.inited = false; this.ending = false; this.audioList = []; this.chunk = MkvPlayer.CHUNK; this.lastErr = '';
     this.rx = new MKV.Remux({ tracks: l => this.onTracks(l), frame: (...a) => this.onFrame(...a) });
     this.start();
   }
@@ -1745,7 +1745,7 @@ class MkvPlayer {
   async getChunk(start) {
     const ctl = new AbortController(); this.ctls.add(ctl);
     try {
-      const r = await this.fetchRange(start, start + MkvPlayer.CHUNK - 1, ctl.signal);
+      const r = await this.fetchRange(start, start + this.chunk - 1, ctl.signal);
       if (r.status === 416) return { buf: new Uint8Array(0) };
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const cr = r.headers.get('content-range'), m = cr && cr.match(/\/(\d+)/);
@@ -1775,7 +1775,9 @@ class MkvPlayer {
         if (this.dead) break;
         if (gen !== this.gen) continue;
         if (e && e.message === 'norange') { this.fail('Your provider’s server doesn’t allow this video to be streamed in pieces.'); break; }
-        if (++tries > 4) { this.fail('The video stopped downloading. Check your connection and try again.'); break; }
+        this.lastErr = (e && e.message) || '';
+        if (this.chunk > MkvPlayer.MIN_CHUNK) { this.chunk = Math.max(MkvPlayer.MIN_CHUNK, this.chunk >> 1); this.next = null; await new Promise(r => setTimeout(r, 300)); continue; }
+        if (++tries > 4) { const st = (this.lastErr.match(/HTTP (\d+)/) || [])[1]; this.fail(st ? `The server stopped sending this video (error ${st}). Try again in a moment, or try another title.` : 'The video stopped downloading. Check your connection and try again.'); break; }
         await new Promise(r => setTimeout(r, 800 * tries));
         continue;
       }
@@ -1856,7 +1858,7 @@ class MkvPlayer {
       const p = this.rx.segStart + this.rx.cuesPos;
       let r = await this.fetchRange(p, p + 15), b = new Uint8Array(await r.arrayBuffer());
       const h = MKV.header(b, 0);
-      if (!h || h.bad || h.size < 0 || h.size > 16e6 || h.id !== 0x1C53BB6B) return;
+      if (!h || h.bad || h.size < 0 || h.size > 2.5e6 || h.id !== 0x1C53BB6B) return;
       r = await this.fetchRange(p, p + h.hl + h.size - 1); b = new Uint8Array(await r.arrayBuffer());
       if (b.length >= h.hl + h.size && !this.rx.cues.length) this.rx.parseCues(b.subarray(h.hl, h.hl + h.size));
     } catch {}
@@ -1935,7 +1937,8 @@ class MkvPlayer {
     this.ending = false;
   }
 }
-MkvPlayer.CHUNK = 6 * 1048576;
+MkvPlayer.CHUNK = 3 * 1048576;
+MkvPlayer.MIN_CHUNK = 512 * 1024;
 
 /* ---------- player ---------- */
 let sleepMin = 0;

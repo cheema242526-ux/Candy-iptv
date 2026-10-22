@@ -14,6 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
 <style>
 :root{
   --bg:#120A24;--bg2:#1A0F33;--panel:#221543;--panel2:#2E1D57;--line:#3D2A6E;
@@ -110,11 +111,11 @@ a{color:inherit;text-decoration:none}
 .sbox .ic{width:18px;height:18px;color:var(--muted)}
 .sbox input{flex:1;min-width:0;border:0;background:none;padding:12px 0;outline:none;font-size:16px}
 .sbox.big{margin-bottom:14px}
-select{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:0 10px;font-size:.88rem;max-width:42%}
+select{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:0 10px;font-size:16px;max-width:42%}
 .rows{display:flex;flex-direction:column;gap:6px}
 .row{display:flex;align-items:center;gap:2px;background:var(--panel);border-radius:16px;padding-right:4px}
 .row-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:8px 10px;background:none;border:0;text-align:left}
-.num{width:32px;text-align:center;font-size:.78rem;color:var(--muted);flex:none}
+.num{min-width:32px;text-align:center;font-size:.78rem;color:var(--muted);flex:none}
 .logo{width:46px;height:46px;border-radius:12px;background:#0E0820;display:grid;place-items:center;overflow:hidden;flex:none;position:relative}
 .logo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#0E0820}
 .logo .ic{color:var(--muted)}
@@ -166,6 +167,8 @@ select{background:var(--panel);border:1px solid var(--line);border-radius:14px;p
 .ep{display:flex;gap:12px;align-items:center;padding:10px;border-radius:16px;background:var(--panel);border:0;text-align:left;width:100%;margin-bottom:6px}
 .ep-th{width:104px;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#0E0820;position:relative;flex:none;display:grid;place-items:center;color:var(--muted)}
 .ep-th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ep-th img.lg{object-fit:contain;padding:6px;background:#0E0820}
+.eps .ep{margin-bottom:0}
 .ep-b{flex:1;min-width:0}
 .ep-b b{display:block;font-weight:500;font-size:.92rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ep-b span{font-size:.76rem;color:var(--muted)}
@@ -245,8 +248,11 @@ select{background:var(--panel);border:1px solid var(--line);border-radius:14px;p
 .p-title b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .p-title span{display:block;font-size:.8rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .p-stage{position:relative;background:#000;width:100%;aspect-ratio:16/9;max-height:62vh;flex:none}
+.p-stage:fullscreen{aspect-ratio:auto;max-height:none}
 .p-stage video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
 .p-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;background:rgba(5,2,12,.88);font-size:.95rem;line-height:1.5}
+.p-spin{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.p-spin .spin{margin:0}
 .p-zap{position:absolute;top:12px;left:12px;padding:10px 14px;border-radius:14px;background:rgba(18,10,36,.88);font-weight:600;pointer-events:none}
 .p-tools{display:flex;gap:6px;overflow-x:auto;padding:10px 12px;scrollbar-width:none;flex:none}
 .tool{flex:none;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:70px;padding:10px 6px;border-radius:16px;background:var(--panel);border:1px solid var(--line);font-size:.68rem;color:var(--muted)}
@@ -295,6 +301,7 @@ select{background:var(--panel);border:1px solid var(--line);border-radius:14px;p
   </div>
   <div class="p-stage" id="pStage">
     <video id="pv" playsinline controls autoplay x-webkit-airplay="allow"></video>
+    <div class="p-spin hidden" id="pSpin"><div class="spin"></div></div>
     <div class="p-msg hidden" id="pMsg"></div>
     <div class="p-zap hidden" id="pZap"></div>
   </div>
@@ -319,7 +326,8 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const enc = encodeURIComponent;
 const P = url => '/stream?url=' + enc(url);
 const PR = url => '/stream?raw=1&url=' + enc(url);
-const imgP = u => !u ? '' : /^https:/i.test(u) ? u : /^http:/i.test(u) ? P(u) : '';
+const imgP = u => !u ? '' : /^https:/i.test(u) ? u : /^http:/i.test(u) ? P(u) : /^\/\//.test(u) ? P('http:' + u) : '';
+const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 const narrow = () => matchMedia('(max-width: 799px)').matches;
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const tm = s => new Date(s * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -461,7 +469,7 @@ async function loadAllCats(t, onProgress) {
 
 function parseM3U(text) {
   const items = { live: [], movie: [], series: [] }, groups = { live: new Map(), movie: new Map() };
-  let cur = null, n = 0;
+  let cur = null; const used = new Set();
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
@@ -473,12 +481,13 @@ function parseM3U(text) {
     } else if (line.startsWith('#')) {
       continue;
     } else if (cur) {
-      const url = line;
+      const url = line.split('|')[0].trim();
       const vod = /\/(movie|series)\//i.test(url) || /\.(mp4|mkv|avi|mov|m4v|webm)(\?|$)/i.test(url);
       const t = vod ? 'movie' : 'live';
       const ext = (url.split('?')[0].match(/\.(\w{2,4})$/) || [])[1] || '';
       groups[t].set(cur.group, 1);
-      items[t].push({ id: String(++n), name: cur.name, icon: cur.icon, cat: cur.group, url, ext, num: t === 'live' ? items.live.length + 1 : 0, archive: false });
+      const base = hash(url + '\n' + cur.name); let id = base, k = 1; while (used.has(id)) id = base + '_' + k++; used.add(id);
+      items[t].push({ id, name: cur.name, icon: cur.icon, cat: cur.group, url, ext, num: t === 'live' ? items.live.length + 1 : 0, archive: false });
       cur = null;
     }
   }
@@ -520,10 +529,14 @@ async function activate(a, fresh) {
     let lib = fresh ? null : await idb.get('lib:' + a.id);
     if (!lib) {
       lib = a.type === 'xtream' ? await loadXtream(a, showLoading) : await loadM3U(a, showLoading);
+      if (S.active === a.id) keepRefs(lib);
       await idb.put('lib:' + a.id, lib);
     }
     setLib(lib);
-    if (!S.accounts.includes(a)) S.accounts.push(a);
+    for (const o of [EPGC, CUC, INFO]) for (const k of Object.keys(o)) delete o[k];
+    MS.slots.fill(null); MS.focus = 0;
+    const ai = S.accounts.findIndex(x => x.id === a.id);
+    if (ai >= 0) S.accounts[ai] = a; else S.accounts.push(a);
     S.active = a.id; save(); unlocked = false; hideLoading(); home();
     return true;
   } catch (e) {
@@ -534,6 +547,18 @@ async function activate(a, fresh) {
   }
 }
 
+function keepRefs(lib) {
+  if (!L || !lib.lazy) return lib;
+  const d = D();
+  for (const t of ['live', 'movie', 'series']) {
+    if (!lib.lazy[t] || !L.map || !L.map[t]) continue;
+    const need = new Set(d.favs[t]);
+    if (t === 'live') { d.recent.forEach(x => need.add(x)); d.collections.forEach(c => c.items.forEach(x => need.add(x))); }
+    const have = new Set(lib.items[t].map(i => i.id));
+    for (const id of need) { const it = L.map[t].get(id); if (it && !have.has(id)) lib.items[t].push(it); }
+  }
+  return lib;
+}
 async function bgRefresh() {
   const a = acc(); if (!a || !L) return;
   try {
@@ -544,7 +569,7 @@ async function bgRefresh() {
     if (Date.now() - (L.at || 0) > 12 * 3600e3) {
       const lib = a.type === 'xtream' ? await loadXtream(a, () => {}) : await loadM3U(a, () => {});
       if (acc() !== a) return;
-      await idb.put('lib:' + a.id, lib); setLib(lib);
+      keepRefs(lib); await idb.put('lib:' + a.id, lib); setLib(lib);
       if (CUR && CUR.v === 'home') render();
     }
   } catch {}
@@ -620,32 +645,61 @@ async function loadSeriesInfo(id) {
 /* ---------- router ---------- */
 const VIEWS = {}, AFTER = {}, ACT = {}, INPUT = {}, CHANGE = {};
 const NAV = [];
-let CUR = null;
+let CUR = null, DEPTH = 0, IGNORE_POP = false, LAST_V = null, GUARD = false;
+try { history.scrollRestoration = 'manual'; } catch {}
+function guard() { if (!GUARD) { history.pushState({ g: 1 }, ''); GUARD = true; } }
+function push(state) { guard(); history.pushState(state, ''); DEPTH++; }
+function rewind() { if (DEPTH > 0) { IGNORE_POP = true; history.go(-DEPTH); DEPTH = 0; } }
+function centerPressed() {
+  document.querySelectorAll('#app .chips, #app .seasons').forEach(row => {
+    const on = row.querySelector('[aria-pressed="true"]'); if (!on) return;
+    row.scrollLeft += on.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - on.offsetWidth) / 2;
+  });
+}
 function render() {
+  const side = LAST_V === CUR.v && $('#app .cats'), sideY = side ? side.scrollTop : 0;
   document.querySelectorAll('#app video').forEach(stopMedia);
   $('#app').innerHTML = VIEWS[CUR.v](CUR.p);
+  LAST_V = CUR.v;
+  if (side) { const c = $('#app .cats'); if (c) c.scrollTop = sideY; }
   AFTER[CUR.v] && AFTER[CUR.v](CUR.p);
+  centerPressed();
 }
-function go(v, p = {}) { if (CUR) NAV.push(CUR); CUR = { v, p }; history.pushState({ n: NAV.length }, ''); render(); scrollTo(0, 0); }
-function home() { NAV.length = 0; CUR = { v: 'home', p: {} }; render(); scrollTo(0, 0); }
-function showLogin() { NAV.length = 0; CUR = { v: 'login', p: {} }; render(); }
+function go(v, p = {}) { if (CUR) { CUR.y = scrollY; NAV.push(CUR); } CUR = { v, p }; push({ n: NAV.length }); LAST_V = null; render(); scrollTo(0, 0); }
+function home() { NAV.length = 0; rewind(); CUR = { v: 'home', p: {} }; LAST_V = null; render(); scrollTo(0, 0); }
+function showLogin() { NAV.length = 0; rewind(); CUR = { v: 'login', p: {} }; LAST_V = null; render(); scrollTo(0, 0); }
 function doBack() {
-  if (CUR && CUR.v === 'browse' && B.catPushed && narrow()) { B.cat = null; B.catPushed = false; render(); scrollTo(0, 0); return; }
+  if (CUR && CUR.v === 'browse' && B.catPushed) {
+    B.catPushed = false;
+    if (narrow()) { B.cat = null; render(); scrollTo(0, B.catY || 0); return; }
+    history.back(); return;
+  }
+  LAST_V = null;
   const prev = NAV.pop();
-  if (prev) { CUR = prev; render(); }
+  if (prev) { CUR = prev; render(); scrollTo(0, prev.y || 0); }
   else if (CUR && CUR.v !== 'home' && CUR.v !== 'login' && acc() && L) home();
 }
 window.addEventListener('popstate', () => {
+  if (IGNORE_POP) { IGNORE_POP = false; return; }
+  if (DEPTH === 0) {
+    GUARD = false;
+    if (!$('#sheet').classList.contains('hidden')) { closeSheet(); guard(); return; }
+    if (!$('#player').classList.contains('hidden')) { closePlayer(true); return; }
+    if (CUR && (CUR.v === 'home' || CUR.v === 'login')) { toast('Press back again to leave'); return; }
+    doBack(); return;
+  }
+  DEPTH--;
+  if (!$('#sheet').classList.contains('hidden')) { closeSheet(); push({ n: NAV.length }); return; }
   if (!$('#player').classList.contains('hidden')) { closePlayer(true); return; }
-  closeSheet(); doBack();
+  doBack();
 });
-ACT.back = () => { if (NAV.length || (CUR.v === 'browse' && B.catPushed && narrow())) history.back(); else if (acc() && L) home(); else showLogin(); };
+ACT.back = () => { if (NAV.length || (CUR.v === 'browse' && B.catPushed)) history.back(); else if (acc() && L) home(); else showLogin(); };
 const topbar = (title, right = '', sub = '') => `<header class="topbar"><button class="ib" data-act="back" aria-label="Back">${icon('back')}</button><div class="tt"><h1>${esc(title)}</h1>${sub ? `<small>${esc(sub)}</small>` : ''}</div>${right}</header>`;
-const logoImg = i => i.icon ? `<img loading="lazy" src="${esc(imgP(i.icon))}" alt="" onerror="this.remove()">${icon('tv')}` : icon('tv');
+const logoImg = i => imgP(i.icon) ? `<img class="lg" loading="lazy" src="${esc(imgP(i.icon))}" alt="" onerror="this.remove()">${icon('tv')}` : icon('tv');
 
 /* ---------- sheet ---------- */
 let SHEET = {}, CONF = null, PINCB = null;
-function openSheet(html) { $('#sheet').classList.remove('hidden'); $('#sheetP').innerHTML = `<button class="ib sheet-x" data-act="closeSheet" aria-label="Close">${icon('close')}</button>${html}`; }
+function openSheet(html) { guard(); $('#sheet').classList.remove('hidden'); $('#sheetP').innerHTML = `<button class="ib sheet-x" data-act="closeSheet" aria-label="Close">${icon('close')}</button>${html}`; }
 function closeSheet() { $('#sheet').classList.add('hidden'); $('#sheetP').innerHTML = ''; }
 ACT.closeSheet = closeSheet;
 const opt = (act, ic, label, extra = '', on = false) => `<button class="opt ${on ? 'on' : ''}" data-act="${act}" ${extra}>${icon(ic)}<span>${esc(label)}</span></button>`;
@@ -686,7 +740,9 @@ VIEWS.login = () => {
 };
 ACT.loginMode = d => { LOGIN.mode = d.m; render(); };
 ACT.peek = (d, el) => { const p = $('#fPass'); const s = p.type === 'password'; p.type = s ? 'text' : 'password'; el.textContent = s ? 'Hide' : 'Show'; };
+let loginBusy = false;
 ACT.doLogin = async () => {
+  if (loginBusy) return;
   const err = $('#fErr'); err.textContent = '';
   const m = LOGIN.mode, name = ($('#fName') && $('#fName').value.trim()) || '';
   if (m === 'single') {
@@ -710,10 +766,11 @@ ACT.doLogin = async () => {
     if (!/^https?:\/\//i.test(url)) { err.textContent = 'Enter a link that starts with http:// or https://.'; return; }
     a = { id: uid(), type: 'm3u', name: name || 'M3U playlist', url };
   }
-  a.temp = !LOGIN.remember;
   const ex = S.accounts.find(x => x.type === a.type && (a.type === 'xtream' ? x.server === a.server && x.username === a.username : x.url === a.url));
-  if (ex) { Object.assign(ex, { ...a, id: ex.id }); a = ex; }
-  await activate(a, true);
+  a.temp = !LOGIN.remember && (!ex || !!ex.temp);
+  if (ex) a = { ...ex, ...a, id: ex.id };
+  loginBusy = true;
+  try { await activate(a, true); } finally { loginBusy = false; }
 };
 
 /* ---------- home ---------- */
@@ -723,7 +780,8 @@ function updateClock() {
   t.textContent = n.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   d.textContent = n.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
-setInterval(updateClock, 15000);
+function tickClock() { updateClock(); if (sleepT && PC) renderTools(); setTimeout(tickClock, 60000 - (Date.now() % 60000) + 50); }
+setTimeout(tickClock, 0);
 VIEWS.home = () => {
   const a = acc(), ui = (L.info && L.info.user_info) || {}, xt = a.type === 'xtream';
   const exp = ui.exp_date && ui.exp_date !== 'null' ? new Date(+ui.exp_date * 1000) : null;
@@ -785,8 +843,8 @@ function catEntries(t) {
 }
 const catRow = c => `<div class="cat ${B.cat === c.id ? 'on' : ''}"><button class="cat-main" data-act="openCat" data-id="${esc(c.id)}">${c.ic ? icon(c.ic) : ''}${c.locked ? icon('lock', 'lk') : ''}<span class="cat-n">${esc(c.name)}</span><span class="cat-c">${c.count == null ? '' : fmt(c.count)}</span></button>${c.special ? '' : `<button class="cat-more" data-act="catMenu" data-id="${esc(c.id)}" aria-label="Category options">${icon('more')}</button>`}</div>`;
 function progressPct(key) { const p = D().progress[key]; return p && p.d ? Math.min(100, p.t / p.d * 100) : 0; }
-const chRow = i => { const f = isFav('live', i.id); return `<div class="row"><button class="row-main" data-act="playLive" data-id="${i.id}">${i.num ? `<span class="num">${i.num}</span>` : ''}<span class="logo">${logoImg(i)}</span><span class="row-n">${esc(i.name)}</span>${i.archive ? '<span class="tag">Catch-up</span>' : ''}</button><button class="ib sm ${f ? 'fav' : ''}" data-act="fav" data-t="live" data-id="${i.id}" aria-label="Favourite">${icon('star', f ? 'fill' : '')}</button><button class="ib sm" data-act="chMenu" data-id="${i.id}" aria-label="More options">${icon('more')}</button></div>`; };
-const poster = (t, i) => { const pct = t === 'movie' ? progressPct('m:' + i.id) : 0; return `<button class="poster" data-act="${t === 'movie' ? 'movieInfo' : 'seriesInfo'}" data-id="${i.id}"><span class="pimg"><span class="pfb">${esc((i.name || '?').trim().slice(0, 1))}</span>${i.icon ? `<img loading="lazy" src="${esc(imgP(i.icon))}" alt="" onerror="this.remove()">` : ''}${pct > 1 ? `<span class="pbar"><i style="width:${pct}%"></i></span>` : ''}</span><span class="pname">${esc(i.name)}</span>${i.rating ? `<span class="prate">★ ${(+i.rating).toFixed(1)}</span>` : ''}</button>`; };
+const chRow = i => { const f = isFav('live', i.id); return `<div class="row"><button class="row-main" data-act="playLive" data-id="${esc(i.id)}">${i.num ? `<span class="num">${i.num}</span>` : ''}<span class="logo">${logoImg(i)}</span><span class="row-n">${esc(i.name)}</span>${i.archive ? '<span class="tag">Catch-up</span>' : ''}</button><button class="ib sm ${f ? 'fav' : ''}" data-act="fav" data-t="live" data-id="${esc(i.id)}" aria-label="Favourite">${icon('star', f ? 'fill' : '')}</button><button class="ib sm" data-act="chMenu" data-id="${esc(i.id)}" aria-label="More options">${icon('more')}</button></div>`; };
+const poster = (t, i) => { const pct = t === 'movie' ? progressPct('m:' + i.id) : 0; return `<button class="poster" data-act="${t === 'movie' ? 'movieInfo' : 'seriesInfo'}" data-id="${esc(i.id)}"><span class="pimg"><span class="pfb">${esc((i.name || '?').trim().slice(0, 1))}</span>${imgP(i.icon) ? `<img loading="lazy" src="${esc(imgP(i.icon))}" alt="" onerror="this.remove()">` : ''}${pct > 1 ? `<span class="pbar"><i style="width:${pct}%"></i></span>` : ''}</span><span class="pname">${esc(i.name)}</span>${i.rating ? `<span class="prate">★ ${(+i.rating).toFixed(1)}</span>` : ''}</button>`; };
 function itemsListHtml() {
   const t = B.type, l = B.list, shown = l.slice(0, B.limit);
   const what = t === 'live' ? 'channels' : t === 'movie' ? 'movies' : 'series';
@@ -812,7 +870,7 @@ ACT.browse = d => { B = { type: d.type, cat: narrow() ? null : '__all', q: '', s
 function selectCat(id) {
   const wasNull = B.cat === null;
   B.cat = id; B.q = ''; B.limit = 150; B.err = ''; B.loading = false;
-  if (narrow() && wasNull) { history.pushState({ cat: 1 }, ''); B.catPushed = true; }
+  if (narrow() && wasNull) { B.catY = scrollY; push({ cat: 1 }); B.catPushed = true; }
   if (isLazy(B.type) && L.catById[B.type].has(id) && !catLoaded(B.type, id)) { B.list = []; fetchCat(id); }
   else B.list = computeList();
   render(); scrollTo(0, 0);
@@ -825,6 +883,12 @@ async function fetchCat(id) {
   if (!B.err) B.list = computeList();
   render();
 }
+matchMedia('(max-width: 799px)').addEventListener('change', () => {
+  if (!CUR || CUR.v !== 'browse') return;
+  if (!narrow() && B.cat === null) { B.cat = '__all'; B.list = computeList(); }
+  else if (narrow() && B.cat !== null && !B.catPushed) { B.catY = 0; push({ cat: 1 }); B.catPushed = true; }
+  render();
+});
 ACT.retryCat = () => { if (B.cat) { B.list = []; fetchCat(B.cat); renderItems(); } };
 ACT.loadAll = async () => {
   const t = B.type; B.loading = true; renderItems();
@@ -846,6 +910,10 @@ ACT.fav = (d, el) => {
 };
 ACT.favBtn = d => { toggleFav(d.t, d.id); render(); };
 
+function leaveCat() {
+  if (narrow() && B.catPushed) return history.back();
+  B.cat = narrow() ? null : '__all'; B.list = B.cat ? computeList() : []; render();
+}
 ACT.catMenu = d => {
   const t = B.type, id = d.id;
   if (id.startsWith('col:')) {
@@ -863,15 +931,15 @@ ACT.catRenameSave = () => { const k = ckey(SHEET.t, SHEET.id), c = L.catById[SHE
 ACT.catLock = () => {
   const { t, id } = SHEET, c = L.catById[t].get(id), k = ckey(t, id), d = D();
   if (isLocked(t, c)) requireUnlock(() => { d.locked = d.locked.filter(x => x !== k); if (ADULT.test(c.name) && !d.allow.includes(k)) d.allow.push(k); save(); closeSheet(); render(); toast('Category unlocked'); });
-  else ensurePin(() => { if (!d.locked.includes(k)) d.locked.push(k); d.allow = d.allow.filter(x => x !== k); unlocked = false; save(); closeSheet(); if (B.cat === id) { B.cat = narrow() ? null : '__all'; B.list = B.cat ? computeList() : []; } render(); toast('Category locked'); });
+  else ensurePin(() => { if (!d.locked.includes(k)) d.locked.push(k); d.allow = d.allow.filter(x => x !== k); unlocked = false; save(); closeSheet(); if (B.cat === id) leaveCat(); else render(); toast('Category locked'); });
 };
-ACT.catHide = () => { const { t, id } = SHEET; D().hidden.push(ckey(t, id)); save(); closeSheet(); if (B.cat === id) { B.cat = narrow() ? null : '__all'; B.list = B.cat ? computeList() : []; } render(); toast('Category hidden. You can show it again in Settings.'); };
+ACT.catHide = () => { const { t, id } = SHEET; D().hidden.push(ckey(t, id)); save(); closeSheet(); if (B.cat === id) leaveCat(); else render(); toast('Category hidden. You can show it again in Settings.'); };
 
 ACT.chMenu = d => {
   const i = L.map.live.get(d.id); if (!i) return;
   SHEET = { id: d.id };
   const inCol = CUR.v === 'browse' && B.cat && B.cat.startsWith('col:');
-  openSheet(`<h3>${esc(i.name)}</h3>${opt('playLive', 'play', 'Play', `data-id="${i.id}"`)}${opt('favSheet', 'star', isFav('live', i.id) ? 'Remove from favourites' : 'Add to favourites')}${opt('colPick', 'folder', 'Add to a collection')}${inCol ? opt('colRemove', 'close', 'Remove from this collection') : ''}`);
+  openSheet(`<h3>${esc(i.name)}</h3>${opt('playLive', 'play', 'Play', `data-id="${esc(i.id)}"`)}${opt('favSheet', 'star', isFav('live', i.id) ? 'Remove from favourites' : 'Add to favourites')}${opt('colPick', 'folder', 'Add to a collection')}${inCol ? opt('colRemove', 'close', 'Remove from this collection') : ''}`);
 };
 ACT.favSheet = () => { const on = toggleFav('live', SHEET.id); closeSheet(); toast(on ? 'Added to favourites' : 'Removed from favourites'); if (CUR.v === 'browse') { B.list = computeList(); renderItems(); } else render(); };
 ACT.colPick = () => { const cols = D().collections; openSheet(`<h3>Add to a collection</h3>${cols.map(c => opt('colAdd', 'folder', `${c.name} (${c.items.length})`, `data-c="${c.id}"`)).join('')}<input type="text" id="colName" placeholder="New collection name" data-enter="colNew"><button class="btn primary big" data-act="colNew">${icon('plus')} Create and add</button>`); };
@@ -880,7 +948,7 @@ ACT.colNew = () => { const name = $('#colName').value.trim(); if (!name) { $('#c
 ACT.colRemove = () => { const c = D().collections.find(x => 'col:' + x.id === B.cat); if (c) c.items = c.items.filter(x => x !== SHEET.id); save(); closeSheet(); B.list = computeList(); render(); };
 ACT.colRename = () => { const c = D().collections.find(x => x.id === SHEET.col); openSheet(`<h3>Rename collection</h3><input type="text" id="pIn" value="${esc(c.name)}" data-enter="colRenameSave"><button class="btn primary big" data-act="colRenameSave">Save</button>`); };
 ACT.colRenameSave = () => { const c = D().collections.find(x => x.id === SHEET.col), v = $('#pIn').value.trim(); if (c && v) c.name = v; save(); closeSheet(); render(); };
-ACT.colDelete = () => { const c = D().collections.find(x => x.id === SHEET.col); confirmBox(`Delete ${c.name}?`, 'Delete', () => { const d = D(); d.collections = d.collections.filter(x => x.id !== c.id); save(); if (B.cat === 'col:' + c.id) { B.cat = narrow() ? null : '__all'; B.catPushed = false; B.list = B.cat ? computeList() : []; } render(); }); };
+ACT.colDelete = () => { const c = D().collections.find(x => x.id === SHEET.col); confirmBox(`Delete ${c.name}?`, 'Delete', () => { const d = D(); d.collections = d.collections.filter(x => x.id !== c.id); save(); if (B.cat === 'col:' + c.id) leaveCat(); else render(); }); };
 
 /* ---------- live play ---------- */
 function ctxLiveList() {
@@ -914,14 +982,14 @@ VIEWS.movie = p => {
   const img = info.movie_image || info.cover_big || i.icon, f = isFav('movie', i.id);
   return `${topbar(i.name)}
   <div class="detail">
-    <div class="dposter"><span class="pfb">${esc(i.name.slice(0, 1))}</span>${img ? `<img src="${esc(imgP(img))}" alt="" onerror="this.remove()">` : ''}</div>
+    <div class="dposter"><span class="pfb">${esc(i.name.slice(0, 1))}</span>${imgP(img) ? `<img src="${esc(imgP(img))}" alt="" onerror="this.remove()">` : ''}</div>
     <div>
       <h2>${esc(info.name || i.name)}</h2>
       <div class="metas">${metas.map(m => `<span class="meta">${esc(m)}</span>`).join('')}</div>
       <div class="dacts">
-        <button class="btn primary" data-act="playMovie" data-id="${i.id}" data-from="${can ? 'resume' : 'start'}">${icon('play', 'fill')} ${can ? `Resume from ${tc(pr.t)}` : 'Play'}</button>
-        ${can ? `<button class="btn" data-act="playMovie" data-id="${i.id}" data-from="start">${icon('history')} Start over</button>` : ''}
-        <button class="btn ${f ? 'fav' : ''}" data-act="favBtn" data-t="movie" data-id="${i.id}">${icon('star', f ? 'fill' : '')} ${f ? 'Favourite' : 'Add to favourites'}</button>
+        <button class="btn primary" data-act="playMovie" data-id="${esc(i.id)}" data-from="${can ? 'resume' : 'start'}">${icon('play', 'fill')} ${can ? `Resume from ${tc(pr.t)}` : 'Play'}</button>
+        ${can ? `<button class="btn" data-act="playMovie" data-id="${esc(i.id)}" data-from="start">${icon('history')} Start over</button>` : ''}
+        <button class="btn ${f ? 'fav' : ''}" data-act="favBtn" data-t="movie" data-id="${esc(i.id)}">${icon('star', f ? 'fill' : '')} ${f ? 'Favourite' : 'Add to favourites'}</button>
         ${info.youtube_trailer ? `<a class="btn" href="https://www.youtube.com/watch?v=${enc(info.youtube_trailer)}" target="_blank" rel="noopener">${icon('film')} Trailer</a>` : ''}
       </div>
       ${/^mkv$/i.test(i.ext || '') ? `<p class="note">This movie is MKV. The app converts it while it plays, so it may take a few seconds to start.</p>` : ''}
@@ -949,21 +1017,23 @@ VIEWS.series = p => {
   const inf = INFO['s:' + s.id], info = (inf && inf.info) || {}, eps = (inf && inf.eps) || [];
   const seasons = [...new Set(eps.map(e => e.season))].sort((a, b) => a - b);
   const last = lastEpOf(s.id);
+  const lastIdx = last ? eps.findIndex(e => e.id === last.id) : -1;
+  const upNext = last && last.d && last.t >= last.d * 0.95 && lastIdx >= 0 ? eps[lastIdx + 1] : null;
   if (SV.id !== s.id) SV = { id: s.id, season: last ? last.season : seasons[0] };
   if (seasons.length && !seasons.includes(SV.season)) SV.season = seasons[0];
   const rating = +(info.rating || s.rating) || 0;
   const metas = [String(info.releaseDate || info.release_date || '').slice(0, 4), info.genre, rating ? `★ ${rating.toFixed(1)}` : '', seasons.length ? `${seasons.length} season${seasons.length === 1 ? '' : 's'}` : ''].filter(Boolean);
   const f = isFav('series', s.id), img = info.cover || s.icon;
-  const epRow = e => { const pct = progressPct('e:' + e.id); return `<button class="ep" data-act="playEp" data-id="${e.id}"><span class="ep-th">${icon('play', 'fill')}${e.img ? `<img loading="lazy" src="${esc(imgP(e.img))}" alt="" onerror="this.remove()">` : ''}${pct > 1 ? `<span class="pbar"><i style="width:${pct}%"></i></span>` : ''}</span><span class="ep-b"><b>E${e.num} ${esc(e.title)}</b><span>${esc(e.dur || '')}</span></span></button>`; };
+  const epRow = e => { const pct = progressPct('e:' + e.id); return `<button class="ep" data-act="playEp" data-id="${esc(e.id)}"><span class="ep-th">${icon('play', 'fill')}${imgP(e.img) ? `<img loading="lazy" src="${esc(imgP(e.img))}" alt="" onerror="this.remove()">` : ''}${pct > 1 ? `<span class="pbar"><i style="width:${pct}%"></i></span>` : ''}</span><span class="ep-b"><b>E${e.num} ${esc(e.title)}</b><span>${esc(e.dur || '')}</span></span></button>`; };
   return `${topbar(s.name)}
   <div class="detail">
-    <div class="dposter"><span class="pfb">${esc(s.name.slice(0, 1))}</span>${img ? `<img src="${esc(imgP(img))}" alt="" onerror="this.remove()">` : ''}</div>
+    <div class="dposter"><span class="pfb">${esc(s.name.slice(0, 1))}</span>${imgP(img) ? `<img src="${esc(imgP(img))}" alt="" onerror="this.remove()">` : ''}</div>
     <div>
       <h2>${esc(info.name || s.name)}</h2>
       <div class="metas">${metas.map(m => `<span class="meta">${esc(m)}</span>`).join('')}</div>
       <div class="dacts">
-        ${last ? `<button class="btn primary" data-act="playEp" data-id="${last.id}">${icon('play', 'fill')} Continue S${last.season} E${last.num}</button>` : eps.length ? `<button class="btn primary" data-act="playEp" data-id="${eps[0].id}">${icon('play', 'fill')} Play S${eps[0].season} E${eps[0].num}</button>` : ''}
-        <button class="btn ${f ? 'fav' : ''}" data-act="favBtn" data-t="series" data-id="${s.id}">${icon('star', f ? 'fill' : '')} ${f ? 'Favourite' : 'Add to favourites'}</button>
+        ${upNext ? `<button class="btn primary" data-act="playEp" data-id="${esc(upNext.id)}">${icon('play', 'fill')} Play S${upNext.season} E${upNext.num}</button>` : last ? `<button class="btn primary" data-act="playEp" data-id="${esc(last.id)}">${icon('play', 'fill')} Continue S${last.season} E${last.num}</button>` : eps.length ? `<button class="btn primary" data-act="playEp" data-id="${esc(eps[0].id)}">${icon('play', 'fill')} Play S${eps[0].season} E${eps[0].num}</button>` : ''}
+        <button class="btn ${f ? 'fav' : ''}" data-act="favBtn" data-t="series" data-id="${esc(s.id)}">${icon('star', f ? 'fill' : '')} ${f ? 'Favourite' : 'Add to favourites'}</button>
         ${info.youtube_trailer ? `<a class="btn" href="https://www.youtube.com/watch?v=${enc(info.youtube_trailer)}" target="_blank" rel="noopener">${icon('film')} Trailer</a>` : ''}
       </div>
       ${!inf ? '<p class="muted">Loading episodes…</p>' : ''}
@@ -980,7 +1050,8 @@ AFTER.series = p => {
 };
 ACT.season = d => { SV.season = +d.n; render(); };
 ACT.playEp = d => {
-  const s = L.map.series.get(SV.id), inf = INFO['s:' + SV.id]; if (!s || !inf) return;
+  const s = L.map.series.get(SV.id), inf = INFO['s:' + SV.id]; if (!s) return;
+  if (!inf) { if (D().progress['e:' + d.id]) ACT.cwPlay({ k: 'e:' + d.id }); return; }
   const idx = inf.eps.findIndex(e => e.id === d.id); if (idx < 0) return;
   playEpisode(s, inf.eps, idx);
 };
@@ -1023,17 +1094,17 @@ ACT.searchLoadAll = async (d, el) => {
 INPUT.sq = debounce(v => { SR.q = v; runSearch(); const r = $('#sRes'); if (r) r.innerHTML = searchHtml(); }, 220);
 
 let CWT = 'live';
-ACT.continue = () => openSheet(cwHtml());
+ACT.continue = () => { const c = cwItems()[0]; CWT = c ? c.kind : 'live'; openSheet(cwHtml()); };
 ACT.cwTab = d => { CWT = d.t; openSheet(cwHtml()); };
 function cwHtml() {
   let body = '';
   if (CWT === 'live') {
     const l = itemsFor('live', '__recent').slice(0, 20);
-    body = l.map(i => `<button class="ep" data-act="playLive" data-id="${i.id}"><span class="ep-th">${logoImg(i)}</span><span class="ep-b"><b>${esc(i.name)}</b><span>Live</span></span></button>`).join('');
+    body = l.map(i => `<button class="ep" data-act="playLive" data-id="${esc(i.id)}"><span class="ep-th">${logoImg(i)}</span><span class="ep-b"><b>${esc(i.name)}</b><span>Live</span></span></button>`).join('');
   } else {
     let l = cwItems().filter(p => p.kind === CWT);
     if (CWT === 'episode') { const seen = new Set(); l = l.filter(p => !seen.has(p.seriesId) && seen.add(p.seriesId)); }
-    body = l.slice(0, 20).map(p => `<button class="ep" data-act="cwPlay" data-k="${esc(p.key)}"><span class="ep-th">${icon('play', 'fill')}${p.icon ? `<img loading="lazy" src="${esc(imgP(p.icon))}" alt="" onerror="this.remove()">` : ''}<span class="pbar"><i style="width:${Math.min(100, p.t / p.d * 100)}%"></i></span></span><span class="ep-b"><b>${esc(p.title)}${p.sub ? ' ' + esc(p.sub) : ''}</b><span>${tc(p.d - p.t)} left</span></span></button>`).join('');
+    body = l.slice(0, 20).map(p => `<button class="ep" data-act="cwPlay" data-k="${esc(p.key)}"><span class="ep-th">${icon('play', 'fill')}${imgP(p.icon) ? `<img loading="lazy" src="${esc(imgP(p.icon))}" alt="" onerror="this.remove()">` : ''}<span class="pbar"><i style="width:${Math.min(100, p.t / p.d * 100)}%"></i></span></span><span class="ep-b"><b>${esc(p.title)}${p.sub ? ' ' + esc(p.sub) : ''}</b><span>${tc(p.d - p.t)} left</span></span></button>`).join('');
   }
   return `<h3>Continue watching</h3><div class="seg3">${[['live', 'Live TV'], ['movie', 'Movies'], ['episode', 'Series']].map(([k, l]) => `<button data-act="cwTab" data-t="${k}" aria-pressed="${CWT === k}">${l}</button>`).join('')}</div>${body || '<div class="empty">Nothing here yet.</div>'}`;
 }
@@ -1059,16 +1130,20 @@ ACT.cwPlay = d => {
 let E = { cat: '__fav', list: [], limit: 30 }, guideToken = 0;
 ACT.epg = () => { if (acc().type !== 'xtream') return ACT.notXt(); const cats = visibleCats('live'); E = { cat: itemsFor('live', '__fav').length ? '__fav' : (cats[0] ? cats[0].id : '__all'), list: [], limit: 30 }; go('epg'); };
 VIEWS.epg = () => {
-  E.list = itemsFor('live', E.cat);
+  E.pending = isLazy('live') && L.catById.live.has(E.cat) && !catLoaded('live', E.cat) && E.failed !== E.cat;
+  E.list = E.pending ? [] : itemsFor('live', E.cat);
   const chips = [{ id: '__fav', name: 'Favourites' }, ...visibleCats('live').map(c => ({ id: c.id, name: catName('live', c) }))];
   const shown = E.list.slice(0, E.limit);
   return `${topbar('TV guide')}<div class="chips">${chips.map(c => `<button class="pill" data-act="epgCat" data-id="${esc(c.id)}" aria-pressed="${E.cat === c.id}">${esc(c.name)}</button>`).join('')}</div>
-  <div>${shown.map(i => `<div class="grow"><button class="gch" data-act="playLive" data-id="${i.id}"><span class="logo">${logoImg(i)}</span><span>${esc(i.name)}</span></button><div class="gprogs" id="g-${i.id}"><span class="gload">Loading…</span></div></div>`).join('') || '<div class="empty">No channels here.</div>'}</div>
+  <div>${shown.map(i => `<div class="grow"><button class="gch" data-act="playLive" data-id="${esc(i.id)}"><span class="logo">${logoImg(i)}</span><span>${esc(i.name)}</span></button><div class="gprogs" id="g-${esc(i.id)}"><span class="gload">Loading…</span></div></div>`).join('') || (E.pending ? '<div class="empty"><div class="spin"></div>Loading channels…</div>' : E.failed === E.cat ? `<div class="empty">These channels didn’t load.<br><br><button class="btn" data-act="epgCat" data-id="${esc(E.cat)}">${icon('refresh')} Try again</button></div>` : '<div class="empty">No channels here.</div>')}</div>
   ${E.list.length > E.limit ? `<button class="btn more" data-act="epgMore">Show more channels</button>` : ''}`;
 };
-AFTER.epg = () => loadGuide(E.list.slice(0, E.limit));
-ACT.epgCat = d => { E.cat = d.id; E.limit = 30; render(); };
-ACT.epgMore = () => { const from = E.limit; E.limit += 30; render(); loadGuide(E.list.slice(from, E.limit)); };
+AFTER.epg = () => {
+  if (E.pending) { const cat = E.cat; loadCat('live', cat).catch(() => { E.failed = cat; }).then(() => { if (CUR.v === 'epg' && E.cat === cat) render(); }); return; }
+  loadGuide(E.list.slice(0, E.limit));
+};
+ACT.epgCat = d => { E.cat = d.id; E.limit = 30; E.failed = null; render(); };
+ACT.epgMore = () => { E.limit += 30; render(); };
 async function loadGuide(items) {
   const token = ++guideToken; let n = 0;
   const work = async () => {
@@ -1085,30 +1160,37 @@ async function loadGuide(items) {
 function progsHtml(it, list) {
   if (!list.length) return '<span class="gload">No guide info</span>';
   const now = Date.now() / 1000;
-  return list.map((p, k) => { const isNow = p.start <= now && p.stop > now, past = p.stop <= now; return `<button class="prog ${isNow ? 'now' : ''} ${past ? 'past' : ''}" data-act="progTap" data-id="${it.id}" data-k="${k}"><small>${tm(p.start)} to ${tm(p.stop)}</small><b>${esc(p.title)}</b>${isNow ? `<span class="bar"><i style="width:${Math.round((now - p.start) / (p.stop - p.start) * 100)}%"></i></span>` : ''}</button>`; }).join('');
+  return list.map((p, k) => { const isNow = p.start <= now && p.stop > now, past = p.stop <= now; return `<button class="prog ${isNow ? 'now' : ''} ${past ? 'past' : ''}" data-act="progTap" data-id="${esc(it.id)}" data-k="${k}"><small>${tm(p.start)} to ${tm(p.stop)}</small><b>${esc(p.title)}</b>${isNow ? `<span class="bar"><i style="width:${Math.round((now - p.start) / (p.stop - p.start) * 100)}%"></i></span>` : ''}</button>`; }).join('');
 }
 ACT.progTap = d => {
   const it = L.map.live.get(d.id), p = EPGC[d.id] && EPGC[d.id].list[+d.k]; if (!it || !p) return;
   const now = Date.now() / 1000;
   if (p.start <= now && p.stop > now) return ACT.playLive({ id: it.id });
   if (p.stop <= now && it.archive) return playCatch(it, p, 'Catch-up');
-  openSheet(`<h3>${esc(p.title)}</h3><p class="muted">${esc(it.name)}, ${new Date(p.start * 1000).toLocaleDateString([], { weekday: 'long' })} ${tm(p.start)} to ${tm(p.stop)}</p>${p.desc ? `<p class="plot">${esc(p.desc)}</p>` : ''}${opt('playLive', 'tv', 'Watch this channel now', `data-id="${it.id}"`)}`);
+  openSheet(`<h3>${esc(p.title)}</h3><p class="muted">${esc(it.name)}, ${new Date(p.start * 1000).toLocaleDateString([], { weekday: 'long' })} ${tm(p.start)} to ${tm(p.stop)}</p>${p.desc ? `<p class="plot">${esc(p.desc)}</p>` : ''}${opt('playLive', 'tv', 'Watch this channel now', `data-id="${esc(it.id)}"`)}`);
 };
 function playCatch(it, p, label) {
-  const dur = Math.max(1, Math.ceil((p.stop - p.start) / 60));
-  openPlayer({ kind: 'catchup', item: it, url: catchSrc(it.id, shiftStart(p), dur), title: it.name, sub: `${label}: ${p.title}`, list: PC && PC.list });
+  const dur = Math.max(1, Math.ceil((p.stop - p.start) / 60)), st = shiftStart(p), a = acc(), url = catchSrc(it.id, st, dur);
+  const php = `${a.server}/streaming/timeshift.php?username=${enc(a.username)}&password=${enc(a.password)}&stream=${enc(it.id)}&start=${enc(st)}&duration=${dur}`;
+  openPlayer({ kind: 'catchup', item: it, url, urls: [url, 'tsv:' + url.replace(/\.m3u8$/, '.ts'), 'tsv:' + php], title: it.name, sub: `${label}: ${p.title}`, list: PC && PC.list });
 }
 
 /* ---------- catch-up ---------- */
 let CU = { q: '', all: [], list: [] }, CUD = { id: null, day: 0 };
 ACT.catchup = () => { if (acc().type !== 'xtream') return ACT.notXt(); CU = { q: '', all: [], list: [] }; go('catchup'); };
-VIEWS.catchup = () => { CU.all = visibleItems('live').filter(i => i.archive); return `${topbar('Catch-up', '', `${fmt(CU.all.length)} channels with recordings`)}<label class="sbox big">${icon('search')}<input data-input="cuq" placeholder="Search channels" value="${esc(CU.q)}" autocomplete="off"></label><div id="cuList">${cuListHtml()}</div>`; };
+VIEWS.catchup = () => { CU.all = visibleItems('live').filter(i => i.archive); return `${topbar('Catch-up', '', `${fmt(CU.all.length)} channels with recordings`)}${allLoaded('live') ? '' : `<div class="banner">${icon('info')}<span>Showing channels from the categories you’ve opened so far.</span></div><button class="btn more" style="margin:0 0 12px" data-act="cuLoadAll">${icon('download')} Load all channels</button>`}<label class="sbox big">${icon('search')}<input data-input="cuq" placeholder="Search channels" value="${esc(CU.q)}" autocomplete="off"></label><div id="cuList">${cuListHtml()}</div>`; };
 function cuListHtml() {
   const q = CU.q.trim().toLowerCase();
   CU.list = CU.all.filter(i => !q || i.name.toLowerCase().includes(q));
   const s = CU.list.slice(0, 200);
-  return s.length ? `<div class="rows">${s.map(i => `<div class="row"><button class="row-main" data-act="cuOpen" data-id="${i.id}"><span class="logo">${logoImg(i)}</span><span class="row-n">${esc(i.name)}</span><span class="tag">${i.archiveDays || '?'} days</span></button></div>`).join('')}</div>` : `<div class="empty">${CU.all.length ? 'No matches.' : 'None of your channels offer catch-up.'}</div>`;
+  return s.length ? `<div class="rows">${s.map(i => `<div class="row"><button class="row-main" data-act="cuOpen" data-id="${esc(i.id)}"><span class="logo">${logoImg(i)}</span><span class="row-n">${esc(i.name)}</span><span class="tag">${i.archiveDays || '?'} days</span></button></div>`).join('')}</div>` : `<div class="empty">${CU.all.length ? 'No matches.' : 'None of your channels offer catch-up.'}</div>`;
 }
+ACT.cuLoadAll = async (d, el) => {
+  el.disabled = true;
+  const failed = await loadAllCats('live', (k, n) => { el.textContent = `Loading ${k} of ${n}…`; });
+  if (failed) toast(`${failed} categor${failed === 1 ? 'y' : 'ies'} didn’t load.`);
+  if (CUR.v === 'catchup') render();
+};
 INPUT.cuq = debounce(v => { CU.q = v; const b = $('#cuList'); if (b) b.innerHTML = cuListHtml(); }, 200);
 ACT.cuOpen = d => { CUD = { id: d.id, day: 0 }; go('catchupCh', { id: d.id }); };
 VIEWS.catchupCh = p => {
@@ -1130,7 +1212,7 @@ async function loadCatchProgs(id) {
   const d0 = new Date(); d0.setHours(0, 0, 0, 0);
   const from = d0.getTime() / 1000 - CUD.day * 86400, to = from + 86400, now = Date.now() / 1000;
   const rows = list.map((p, k) => ({ p, k })).filter(({ p }) => p.start >= from && p.start < to && p.stop <= now).sort((a, b) => b.p.start - a.p.start);
-  box.innerHTML = rows.length ? `<div class="rows">${rows.map(({ p, k }) => `<div class="row"><button class="row-main" data-act="cuPlay" data-k="${k}"><span class="num">${tm(p.start)}</span><span class="row-n">${esc(p.title)}<small>${tm(p.start)} to ${tm(p.stop)}</small></span>${icon('play', 'fill')}</button></div>`).join('')}</div>` : '<div class="empty">No recordings for this day.</div>';
+  box.innerHTML = rows.length ? `<div class="rows">${rows.map(({ p, k }) => `<div class="row"><button class="row-main" data-act="cuPlay" data-k="${k}"><span class="row-n">${esc(p.title)}<small>${tm(p.start)} to ${tm(p.stop)}</small></span>${icon('play', 'fill')}</button></div>`).join('')}</div>` : '<div class="empty">No recordings for this day.</div>';
 }
 ACT.cuPlay = d => { const it = L.map.live.get(CUD.id), p = CUC[CUD.id] && CUC[CUD.id][+d.k]; if (it && p) playCatch(it, p, 'Catch-up'); };
 
@@ -1153,8 +1235,7 @@ function msMount(k) {
   el.innerHTML = `<video playsinline autoplay></video><div class="slot-bar"><span>${esc(it.name)}</span><button data-act="msPick" data-i="${k}">Change</button><button data-act="msClear" data-i="${k}" aria-label="Remove channel">✕</button></div>`;
   const v = el.querySelector('video');
   v.muted = MS.focus !== k;
-  attach(v, liveSrc(it), () => { const s = el.querySelector('.slot-bar span'); if (s) s.textContent = it.name + ' is offline'; });
-  v.play().catch(() => {});
+  playChain(v, sourcesFor({ kind: 'live', item: it }), () => { const s = el.querySelector('.slot-bar span'); if (s) s.textContent = it.name + ' is offline'; }, { alive: () => v.isConnected });
 }
 function msFocusUpdate() { for (let k = 0; k < MS.layout; k++) { const el = $('#slot-' + k); if (!el) continue; el.classList.toggle('focus', k === MS.focus); const v = el.querySelector('video'); if (v) { v.muted = k !== MS.focus; if (!v.muted) v.play().catch(() => {}); } } }
 ACT.msFocus = d => { MS.focus = +d.i; msFocusUpdate(); };
@@ -1167,7 +1248,7 @@ function msResults(q) {
   let l = q ? visibleItems('live').filter(i => i.name.toLowerCase().includes(q)) : [...itemsFor('live', '__fav'), ...itemsFor('live', '__recent')];
   if (!q && !l.length) l = visibleItems('live');
   const seen = new Set(); l = l.filter(i => !seen.has(i.id) && seen.add(i.id)).slice(0, 50);
-  return l.length ? l.map(i => `<button class="ep" data-act="msSet" data-id="${i.id}"><span class="ep-th">${logoImg(i)}</span><span class="ep-b"><b>${esc(i.name)}</b></span></button>`).join('') : '<div class="empty">No channels found.</div>';
+  return l.length ? l.map(i => `<button class="ep" data-act="msSet" data-id="${esc(i.id)}"><span class="ep-th">${logoImg(i)}</span><span class="ep-b"><b>${esc(i.name)}</b></span></button>`).join('') : '<div class="empty">No channels found.</div>';
 }
 INPUT.msq = debounce(v => { const r = $('#msRes'); if (r) r.innerHTML = msResults(v); }, 200);
 ACT.msSet = d => { const k = SHEET.slot; MS.slots[k] = d.id; MS.focus = k; closeSheet(); msMount(k); msFocusUpdate(); };
@@ -1226,6 +1307,7 @@ CHANGE.restore = async (v, el) => {
   const f = el.files && el.files[0]; if (!f) return;
   try { const j = JSON.parse(await f.text()); if (!j || j.app !== 'candy-iptv' || !j.S || !Array.isArray(j.S.accounts)) throw 0; S = j.S; save(); await idb.clear(); toast('Backup restored'); setTimeout(() => location.reload(), 700); }
   catch { toast('That file isn’t a Candy IPTV backup.'); }
+  finally { el.value = ''; }
 };
 ACT.clearAll = () => confirmBox('Clear all data? This removes every saved user, favourite and setting from this device.', 'Clear everything', async () => { try { localStorage.removeItem('ciptv'); } catch {} await idb.clear(); location.reload(); });
 
@@ -1236,19 +1318,27 @@ AFTER.checker = () => runCheck();
 ACT.runCheck = () => runCheck();
 async function runCheck() {
   const a = acc(); if (!a || !$('#chk')) return;
+  const tok = runCheck.tok = (runCheck.tok || 0) + 1, live_ = () => tok === runCheck.tok;
   const rows = [];
-  const draw = () => { const b = $('#chk'); if (b) b.innerHTML = rows.map(r => `<div class="check"><span class="st ${r.s}">${r.s === 'ok' ? icon('check') : r.s === 'bad' ? icon('close') : '<span class="spin sm"></span>'}</span><div><b>${esc(r.n)}</b><span>${esc(r.m || 'Checking…')}</span></div></div>`).join(''); };
-  const step = async (n, fn) => { const r = { n, s: 'run' }; rows.push(r); draw(); const t0 = performance.now(); try { r.m = (await fn()) + ` (${Math.round(performance.now() - t0)} ms)`; r.s = 'ok'; } catch (e) { r.s = 'bad'; r.m = (e && e.message) || 'Failed'; } draw(); };
+  const draw = () => { if (!live_()) return; const b = $('#chk'); if (b) b.innerHTML = rows.map(r => `<div class="check"><span class="st ${r.s}">${r.s === 'ok' ? icon('check') : r.s === 'bad' ? icon('close') : '<span class="spin sm"></span>'}</span><div><b>${esc(r.n)}</b><span>${esc(r.m || 'Checking…')}</span></div></div>`).join(''); };
+  const step = async (n, fn) => { if (!live_()) return; const r = { n, s: 'run' }; rows.push(r); draw(); const t0 = performance.now(); try { r.m = (await fn()) + ` (${Math.round(performance.now() - t0)} ms)`; r.s = 'ok'; } catch (e) { r.s = 'bad'; r.m = (e && e.message) || 'Failed'; } draw(); };
   if (a.type === 'xtream') {
     await step('Server', async () => { const r = await xapi(a); if (!r.user_info || +r.user_info.auth !== 1) throw new Error('The server refused your login.'); L.info = r; return 'Reachable, login accepted'; });
     await step('Subscription', async () => { const u = L.info.user_info || {}; if (String(u.status).toLowerCase() !== 'active') throw new Error(`Status is ${u.status || 'unknown'}`); return `Active, ${u.active_cons || 0} of ${u.max_connections || '?'} connections in use`; });
   } else {
     await step('Playlist', async () => { const r = await fetch(PR(a.url), { headers: { range: 'bytes=0-4095' } }); if (!(r.ok || r.status === 206)) throw new Error(`The playlist link answered ${r.status}.`); const t = await r.text(); if (!/#EXTM3U|#EXTINF/i.test(t)) throw new Error('The link didn’t return an M3U playlist.'); return 'Playlist link works'; });
   }
+  const peek = async r => { try { const rd = r.body.getReader(); const { value } = await rd.read(); rd.cancel().catch(() => {}); return value || new Uint8Array(0); } catch { return new Uint8Array(0); } };
   const live = itemsFor('live', '__fav')[0] || visibleItems('live')[0];
-  if (live) await step(`Live: ${live.name}`, async () => { const r = await fetch(P(liveSrc(live))); const t = await r.text(); if (!r.ok || !/#EXTM3U/.test(t)) throw new Error('This channel didn’t answer. It may be offline.'); return 'Channel stream works'; });
+  if (live) await step(`Live: ${live.name}`, async () => {
+    const srcs = sourcesFor({ kind: 'live', item: live }).map(x => x.replace(/^(ts|hls):/, ''));
+    for (const u of [...new Set(srcs)]) {
+      try { const r = await fetch(P(u)); const b = await peek(r); if (!r.ok) continue; const head = new TextDecoder().decode(b.subarray(0, 200)); if (/#EXTM3U/.test(head)) return 'Channel stream works (HLS)'; if (b[0] === 0x47) return 'Channel stream works (TS)'; } catch {}
+    }
+    throw new Error('This channel didn’t answer. It may be offline.');
+  });
   const mv = visibleItems('movie')[0];
-  if (mv) await step(`Movie: ${mv.name}`, async () => { const r = await fetch(P(movieSrc(mv)), { headers: { range: 'bytes=0-1023' } }); if (!(r.ok || r.status === 206)) throw new Error(`The movie link answered ${r.status}.`); try { await r.arrayBuffer(); } catch {} return 'Movie file is reachable'; });
+  if (mv) await step(`Movie: ${mv.name}`, async () => { const r = await fetch(P(movieSrc(mv)), { headers: { range: 'bytes=0-1023' } }); if (!(r.ok || r.status === 206)) throw new Error(`The movie link answered ${r.status}.`); await peek(r); return 'Movie file is reachable'; });
 }
 
 /* ---------- MKV converter: repackages MKV into fragmented MP4 while streaming ---------- */
@@ -1848,17 +1938,32 @@ class MkvPlayer {
 MkvPlayer.CHUNK = 6 * 1048576;
 
 /* ---------- player ---------- */
+let sleepMin = 0;
 let PC = null, ASPECT = 'contain', sleepT = null, sleepEnd = 0, saveT = 0, zapBuf = '', zapT = null;
 const ASPECTS = { contain: 'Fit', cover: 'Fill', fill: 'Stretch' };
 const pv = $('#pv');
-function stopMedia(v) { if (!v) return; if (v._mkv) { try { v._mkv.destroy(); } catch {} v._mkv = null; } if (v._hls) { try { v._hls.destroy(); } catch {} v._hls = null; } v.onerror = null; try { v.pause(); } catch {} v.removeAttribute('src'); try { v.load(); } catch {} }
+function stopMedia(v) { if (!v) return; if (v._ts) { const t = v._ts; v._ts = null; try { t.unload(); t.detachMediaElement(); t.destroy(); } catch {} } if (v._mkv) { try { v._mkv.destroy(); } catch {} v._mkv = null; } if (v._hls) { try { v._hls.destroy(); } catch {} v._hls = null; } v.onerror = null; try { v.pause(); } catch {} v.removeAttribute('src'); try { v.load(); } catch {} }
 function attach(v, rawUrl, onErr, opts = {}) {
   if (rawUrl.startsWith('mkv:')) {
     if (!MkvPlayer.supported()) return onErr('');
     v._mkv = new MkvPlayer(v, rawUrl.slice(4), msg => { v._mkv = null; onErr(msg); }, opts);
     return;
   }
-  const url = P(rawUrl), hls = /\.m3u8(\?|$)/i.test(rawUrl);
+  const tsv = rawUrl.startsWith('tsv:');
+  if (tsv || rawUrl.startsWith('ts:')) {
+    const u = rawUrl.slice(tsv ? 4 : 3), M = window.mpegts;
+    const feat = M && M.getFeatureList ? M.getFeatureList() : {};
+    if (!M || !(tsv ? feat.msePlayback : feat.mseLivePlayback)) return onErr('');
+    let p;
+    try { p = M.createPlayer({ type: 'mpegts', isLive: !tsv, url: new URL(P(u), location.href).href }, { enableWorker: true, liveBufferLatencyChasing: !tsv, lazyLoad: false }); }
+    catch { return onErr(''); }
+    let failed = false;
+    p.on(M.Events.ERROR, () => { if (failed || v._ts !== p) return; failed = true; v._ts = null; setTimeout(() => { try { p.unload(); p.detachMediaElement(); p.destroy(); } catch {} }, 0); onErr(); });
+    p.attachMediaElement(v); p.load(); v._ts = p;
+    return;
+  }
+  const forceHls = rawUrl.startsWith('hls:'); if (forceHls) rawUrl = rawUrl.slice(4);
+  const url = P(rawUrl), hls = forceHls || /\.m3u8(\?|$)/i.test(rawUrl);
   if (hls && !(isApple && v.canPlayType('application/vnd.apple.mpegurl')) && window.Hls && Hls.isSupported()) {
     const h = new Hls({ enableWorker: true, backBufferLength: 60 });
     let netRetry = 0, mediaRetry = 0;
@@ -1875,8 +1980,23 @@ function attach(v, rawUrl, onErr, opts = {}) {
   v.onerror = () => onErr();
   v.src = url;
 }
+function linkChain(u) {
+  if (/\.m3u8(\?|$)/i.test(u)) return [u];
+  if (/\.ts(\?|$)/i.test(u)) return ['ts:' + u, u];
+  if (/\.(mkv)(\?|$)/i.test(u)) return MkvPlayer.supported() ? ['mkv:' + u, u] : [u];
+  if (/\.(mp4|m4v|mov|webm|mp3|aac)(\?|$)/i.test(u)) return [u];
+  return [u, 'ts:' + u, 'hls:' + u];
+}
 function sourcesFor(c) {
+  if (c.urls) return c.urls;
   const raw = srcFor(c);
+  if (c.kind === 'live') {
+    const a = acc();
+    if (a && a.type === 'xtream') return [raw, 'ts:' + raw.replace(/\.m3u8$/, '.ts')];
+    const orig = c.item.url || raw;
+    return raw !== orig ? [raw, ...linkChain(orig)] : linkChain(orig);
+  }
+  if (c.kind === 'url') return linkChain(raw);
   if (c.kind === 'movie' || c.kind === 'episode') {
     const ext = (c.item.ext || (raw.split('?')[0].match(/\.(\w{2,4})$/) || [])[1] || '').toLowerCase();
     const xt = acc() && acc().type === 'xtream';
@@ -1891,12 +2011,13 @@ function sourcesFor(c) {
 }
 function playChain(v, list, onFail, opts = {}, i = 0, why = '') {
   if (i >= list.length) return onFail(why);
-  if (i > 0) stopMedia(v);
+  if (i > 0) { if (opts.alive && !opts.alive()) return; stopMedia(v); }
   attach(v, list[i], msg => playChain(v, list, onFail, opts, i + 1, why || msg || ''), opts);
   v.play().catch(() => {});
 }
 function srcFor(c) { switch (c.kind) { case 'live': return liveSrc(c.item); case 'movie': return movieSrc(c.item); case 'episode': return epSrc(c.item); default: return c.url; } }
-function showMsg(t) { const m = $('#pMsg'); m.textContent = t; m.classList.remove('hidden'); }
+function spin(on) { $('#pSpin').classList.toggle('hidden', !on); }
+function showMsg(t) { spin(false); const m = $('#pMsg'); m.textContent = t; m.classList.remove('hidden'); }
 function hideMsg() { $('#pMsg').classList.add('hidden'); }
 function errText() {
   const ext = (PC.item && PC.item.ext) || '';
@@ -1911,14 +2032,14 @@ function openPlayer(ctx) {
   if (wasOpen) saveProgress(true);
   PC = ctx;
   $('#player').classList.remove('hidden'); document.body.classList.add('noscroll');
-  if (!wasOpen) history.pushState({ player: 1 }, '');
+  if (!wasOpen) push({ player: 1 });
   $('#pTitle').textContent = ctx.kind === 'live' ? ctx.item.name : (ctx.title || (ctx.item && ctx.item.name) || '');
   $('#pSub').textContent = ctx.kind === 'live' ? (ctx.item.num ? `Channel ${ctx.item.num}` : 'Live') : (ctx.sub || '');
-  hideMsg(); stopMedia(pv); pv.style.objectFit = ASPECT;
-  playChain(pv, sourcesFor(ctx), why => { if (PC === ctx) showMsg(why || errText()); }, { audio: ctx.mkvAudio, notice: m => { if (PC === ctx) toast(m); } });
+  hideMsg(); stopMedia(pv); pv.style.objectFit = ASPECT; spin(true);
+  playChain(pv, sourcesFor(ctx), why => { if (PC === ctx) showMsg(why || errText()); }, { audio: ctx.mkvAudio, alive: () => PC === ctx, notice: m => { if (PC === ctx) toast(m); } });
   const pr = ctx.resumeKey && D().progress[ctx.resumeKey];
   const at = ctx.startAt != null ? ctx.startAt : (ctx.resume && pr && pr.t > 30 && pr.t < pr.d * 0.95 ? pr.t : null);
-  if (at != null) pv.addEventListener('loadedmetadata', () => { try { pv.currentTime = at; } catch {} }, { once: true });
+  if (at != null) pv.addEventListener('loadedmetadata', () => { if (PC !== ctx) return; try { pv.currentTime = at; } catch {} }, { once: true });
   pv.play().catch(() => {});
   renderTools(); updatePFav();
   if (ctx.kind === 'live') { addRecent(ctx.item.id); loadNowNext(); }
@@ -1926,8 +2047,9 @@ function openPlayer(ctx) {
   else $('#pEpg').innerHTML = '';
 }
 function closePlayer(fromPop) {
+  closeSheet();
   if (!fromPop) { history.back(); return; }
-  saveProgress(true); stopMedia(pv);
+  saveProgress(true); stopMedia(pv); spin(false);
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   $('#player').classList.add('hidden'); document.body.classList.remove('noscroll');
   clearTimeout(sleepT); sleepT = null; PC = null;
@@ -1947,7 +2069,9 @@ function saveProgress(force) {
 }
 pv.addEventListener('timeupdate', () => saveProgress(false));
 pv.addEventListener('pause', () => saveProgress(true));
-pv.addEventListener('playing', hideMsg);
+pv.addEventListener('playing', () => { hideMsg(); spin(false); });
+pv.addEventListener('canplay', () => spin(false));
+pv.addEventListener('waiting', () => { if (PC && $('#pMsg').classList.contains('hidden')) spin(true); });
 pv.addEventListener('ended', () => { saveProgress(true); if (PC && PC.kind === 'episode' && S.settings.autoNext && PC.list && PC.index < PC.list.length - 1) { toast('Playing the next episode'); nextEp(); } });
 function nextEp() { const i = PC.index + 1, e = PC.list[i]; if (!e) return; openPlayer({ ...PC, item: e, index: i, sub: `S${e.season} E${e.num} ${e.title}`, resumeKey: 'e:' + e.id, resume: true, startAt: null }); }
 
@@ -1988,7 +2112,7 @@ function zap(dir) { if (!PC || PC.kind !== 'live' || !PC.list || PC.list.length 
 function zapNumber(n) { const l = PC.list || []; let idx = l.findIndex(x => x.num === n); if (idx < 0 && n >= 1 && n <= l.length) idx = n - 1; if (idx >= 0) zapTo(idx); else showZap(`No channel ${n}`); }
 ACT.pPrev = () => zap(-1);
 ACT.pNext = () => zap(1);
-ACT.pNum = () => openSheet(`<h3>Go to channel number</h3><input type="number" id="numIn" inputmode="numeric" min="1" data-enter="pNumGo"><button class="btn primary big" data-act="pNumGo">Go</button>`) || setTimeout(() => $('#numIn') && $('#numIn').focus(), 50);
+ACT.pNum = () => { openSheet(`<h3>Go to channel number</h3><input type="number" id="numIn" inputmode="numeric" min="1" data-enter="pNumGo"><button class="btn primary big" data-act="pNumGo">Go</button>`); setTimeout(() => $('#numIn') && $('#numIn').focus(), 50); };
 ACT.pNumGo = () => { const n = +$('#numIn').value; closeSheet(); if (n) zapNumber(n); };
 ACT.pStartOver = async () => {
   const it = PC.item, list = await getEpg(it.id), now = Date.now() / 1000;
@@ -2020,9 +2144,9 @@ ACT.pSubs = () => {
   openSheet(`<h3>Subtitles</h3>${o.length ? opt('setSub', 'close', 'Off', 'data-i="-1"', !o.some(x => x.on)) + o.map(x => opt('setSub', 'cc', x.l, `data-i="${x.i}"`, x.on)).join('') : '<p class="note">This video has no subtitles.</p>'}`);
 };
 ACT.setSub = d => { const i = +d.i; if (pv._hls) { pv._hls.subtitleDisplay = i >= 0; pv._hls.subtitleTrack = i; } else for (let k = 0; k < pv.textTracks.length; k++) pv.textTracks[k].mode = k === i ? 'showing' : 'disabled'; closeSheet(); toast(i >= 0 ? 'Subtitles on' : 'Subtitles off'); };
-ACT.pSleep = () => openSheet(`<h3>Sleep timer</h3><p class="note">Playback stops after the time you pick.</p>${[0, 15, 30, 60, 90, 120].map(m => opt('setSleep', 'moon', m ? `${m} minutes` : 'Off', `data-m="${m}"`)).join('')}`);
+ACT.pSleep = () => openSheet(`<h3>Sleep timer</h3><p class="note">Playback stops after the time you pick.</p>${[0, 15, 30, 60, 90, 120].map(m => opt('setSleep', 'moon', m ? `${m} minutes` : 'Off', `data-m="${m}"`, (sleepT ? sleepMin : 0) === m)).join('')}`);
 ACT.setSleep = d => {
-  const m = +d.m; clearTimeout(sleepT); sleepT = null; closeSheet();
+  const m = +d.m; clearTimeout(sleepT); sleepT = null; sleepMin = m; closeSheet();
   if (m) { sleepEnd = Date.now() + m * 60000; sleepT = setTimeout(() => { sleepT = null; pv.pause(); if (PC) closePlayer(false); toast('Sleep timer stopped playback'); }, m * 60000); toast(`Stopping in ${m} minutes`); }
   else toast('Sleep timer off');
   if (PC) renderTools();
@@ -2038,7 +2162,7 @@ ACT.pAir = () => { try { pv.webkitShowPlaybackTargetPicker(); } catch { toast('A
 ACT.pFull = () => {
   const st = $('#pStage');
   if (document.fullscreenElement) return document.exitFullscreen();
-  if (st.requestFullscreen) st.requestFullscreen().catch(() => pv.webkitEnterFullscreen && pv.webkitEnterFullscreen());
+  if (st.requestFullscreen) st.requestFullscreen().then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch {} }).catch(() => pv.webkitEnterFullscreen && pv.webkitEnterFullscreen());
   else if (pv.webkitEnterFullscreen) pv.webkitEnterFullscreen();
 };
 
@@ -2051,7 +2175,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => { const k = e.target.dataset && e.target.dataset.input; if (k && INPUT[k]) INPUT[k](e.target.value, e.target); });
 document.addEventListener('change', e => { const k = e.target.dataset && e.target.dataset.change; if (k && CHANGE[k]) CHANGE[k](e.target.value, e.target); });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.dataset && e.target.dataset.enter) { e.preventDefault(); const f = ACT[e.target.dataset.enter]; f && f({}, e.target); return; }
+  if (e.key === 'Enter' && !e.isComposing && e.target.dataset && e.target.dataset.enter) { e.preventDefault(); const f = ACT[e.target.dataset.enter]; f && f({}, e.target); return; }
   if (e.key === 'Escape' && !$('#sheet').classList.contains('hidden')) { closeSheet(); return; }
   if ($('#player').classList.contains('hidden') || !PC || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
   if (e.key === 'Escape') return closePlayer(false);
@@ -2060,11 +2184,12 @@ document.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); return zap(1); }
     if (/^\d$/.test(e.key)) { zapBuf += e.key; showZap(zapBuf); clearTimeout(zapT); zapT = setTimeout(() => { const n = +zapBuf; zapBuf = ''; zapNumber(n); }, 1500); }
   } else {
-    if (e.key === 'ArrowLeft') ACT.pRew();
-    if (e.key === 'ArrowRight') ACT.pFwd();
+    if (e.key === 'ArrowLeft') { e.preventDefault(); ACT.pRew(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); ACT.pFwd(); }
   }
   if (e.key === ' ') { e.preventDefault(); pv.paused ? pv.play() : pv.pause(); }
 });
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) try { screen.orientation.unlock(); } catch {} });
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveProgress(true); });
 
 /* ---------- start ---------- */

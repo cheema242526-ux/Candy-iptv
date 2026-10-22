@@ -1329,16 +1329,27 @@ async function runCheck() {
     await step('Playlist', async () => { const r = await fetch(PR(a.url), { headers: { range: 'bytes=0-4095' } }); if (!(r.ok || r.status === 206)) throw new Error(`The playlist link answered ${r.status}.`); const t = await r.text(); if (!/#EXTM3U|#EXTINF/i.test(t)) throw new Error('The link didn’t return an M3U playlist.'); return 'Playlist link works'; });
   }
   const peek = async r => { try { const rd = r.body.getReader(); const { value } = await rd.read(); rd.cancel().catch(() => {}); return value || new Uint8Array(0); } catch { return new Uint8Array(0); } };
-  const live = itemsFor('live', '__fav')[0] || visibleItems('live')[0];
+  const notFound = async r => { if (r.status !== 404) return ''; let t = ''; try { t = new TextDecoder().decode(await peek(r)); } catch {} return /netlify|page not found|broken link/i.test(t) ? 'netlify' : 'provider'; };
+  const why404 = w => w === 'netlify' ? 'Netlify says the /stream helper doesn’t exist. Check netlify.toml and the netlify/functions folder.' : 'Your provider answered “not found” to the Netlify server. It may block video from cloud servers.';
+  if (a.type === 'xtream') await step('Video helper', async () => {
+    const r = await fetch(P(`${a.server}/player_api.php?username=${enc(a.username)}&password=${enc(a.password)}`));
+    const w = await notFound(r); if (w) throw new Error(why404(w));
+    if (!r.ok) throw new Error(`The /stream helper answered ${r.status}.`);
+    const t = await r.text(); if (!/user_info/.test(t)) throw new Error('The /stream helper answered, but not with your provider’s data.');
+    return 'Works, and your provider answers through it';
+  });
+  const realCh = i => !/#{3,}|^[-=*~_.\s]{3,}|^[-=*~_.#\s]+$/.test(i.name);
+  const live = itemsFor('live', '__fav').find(realCh) || visibleItems('live').find(realCh);
   if (live) await step(`Live: ${live.name}`, async () => {
     const srcs = sourcesFor({ kind: 'live', item: live }).map(x => x.replace(/^(ts|hls):/, ''));
+    let last404 = '';
     for (const u of [...new Set(srcs)]) {
-      try { const r = await fetch(P(u)); const b = await peek(r); if (!r.ok) continue; const head = new TextDecoder().decode(b.subarray(0, 200)); if (/#EXTM3U/.test(head)) return 'Channel stream works (HLS)'; if (b[0] === 0x47) return 'Channel stream works (TS)'; } catch {}
+      try { const r = await fetch(P(u)); if (r.status === 404) { last404 = await notFound(r); continue; } const b = await peek(r); if (!r.ok) continue; const head = new TextDecoder().decode(b.subarray(0, 200)); if (/#EXTM3U/.test(head)) return 'Channel stream works (HLS)'; if (b[0] === 0x47) return 'Channel stream works (TS)'; } catch {}
     }
-    throw new Error('This channel didn’t answer. It may be offline.');
+    throw new Error(last404 ? why404(last404) : 'This channel didn’t answer. It may be offline.');
   });
   const mv = visibleItems('movie')[0];
-  if (mv) await step(`Movie: ${mv.name}`, async () => { const r = await fetch(P(movieSrc(mv)), { headers: { range: 'bytes=0-1023' } }); if (!(r.ok || r.status === 206)) throw new Error(`The movie link answered ${r.status}.`); await peek(r); return 'Movie file is reachable'; });
+  if (mv) await step(`Movie: ${mv.name}`, async () => { const r = await fetch(P(movieSrc(mv)), { headers: { range: 'bytes=0-1023' } }); const w = await notFound(r); if (w) throw new Error(why404(w)); if (!(r.ok || r.status === 206)) throw new Error(`The movie link answered ${r.status}.`); await peek(r); return 'Movie file is reachable'; });
 }
 
 /* ---------- MKV converter: repackages MKV into fragmented MP4 while streaming ---------- */
